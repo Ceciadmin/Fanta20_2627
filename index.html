@@ -1829,13 +1829,14 @@ function attachModalHandlers(){
       state.prefDraft[i].bid = inp.value;
     });
   });
-  const confirmBtn = document.getElementById('modal-confirm');
-  if(confirmBtn) confirmBtn.addEventListener('click', async ()=>{
-    document.querySelectorAll('[data-pref-bid]').forEach(inp=>{
+    const confirmBtn = document.getElementById('modal-confirm');
+    if(confirmBtn) confirmBtn.addEventListener('click', async ()=>{
+      document.querySelectorAll('[data-pref-bid]').forEach(inp=>{
       const i = parseInt(inp.dataset.prefBid);
       state.prefDraft[i].bid = inp.value;
     });
     const list = state.lists[state.openListId];
+    const me = currentUserObj();
     const errors = {};
     const chosenNames = new Set();
     state.prefDraft.forEach((p,i)=>{
@@ -1846,12 +1847,14 @@ function attachModalHandlers(){
       const bidNum = parseFloat(p.bid);
       if(!plObj){ errors[i]='Giocatore non valido.'; return; }
       if(isNaN(bidNum) || bidNum < plObj.minBid){ errors[i]=`L'offerta deve essere almeno ${fmtCredits(plObj.minBid)}.`; return; }
+      if(bidNum > me.credits){ errors[i]=`L'offerta supera i tuoi crediti residui (${fmtCredits(me.credits)}).`; return; }
     });
     if(Object.keys(errors).length>0){
       state.prefErrors = errors;
       render();
       return;
     }
+    
     const final = state.prefDraft.map(p=>({player:p.player, bid:parseFloat(p.bid)}));
     if(!state.submissions[state.openListId]) state.submissions[state.openListId] = {};
     state.submissions[state.openListId][state.currentUser] = final;
@@ -2038,3 +2041,4 @@ loadAll();
 </script>
 </body>
 </html>
+
