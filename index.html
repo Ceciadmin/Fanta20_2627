@@ -187,6 +187,8 @@ let state = {
   toast: null,
   squadCompletion: null, // {assigned:{user:[{player,price,role}]}, computedAt}
   manualAssignments: {}, // {user:[{id,player,price,role}]} - assegnazioni manuali admin pre-completamento
+  dataAnomaly: null, // array di nomi documento che risultano assenti in modo sospetto (vedi loadAll)
+  anomalyBackupTs: null, // timestamp del backup usato per il recupero temporaneo in memoria
 };
 
 function uid(){ return Math.random().toString(36).slice(2,10); }
@@ -205,9 +207,99 @@ function defaultLists(){
 const DEFAULT_USERS = [{username:'admin', password:'admin', role:'admin', credits:0}];
 const DEFAULT_CONFIG = {initialCredits:500};
 const loadedDocs = new Set();
+const BACKUP_COLLECTION = 'fantacalcio_backups';
+const BACKUP_THROTTLE_MS = 2*60*1000; // massimo un backup automatico ogni 2 minuti
+const BACKUP_KEEP = 40; // quanti backup automatici conservare
+let lastAutoBackupAt = 0;
+let backupsCache = []; // lista backup per la scheda admin "Backup"
 
 function checkFirebaseConfigured(){
   return firebaseConfig.apiKey && !firebaseConfig.apiKey.startsWith('INCOLLA_QUI');
+}
+
+function snapshotState(){
+  return {
+    users: state.users,
+    config: state.config,
+    lists: state.lists,
+    submissions: state.submissions,
+    squadCompletion: state.squadCompletion,
+    manualAssignments: state.manualAssignments,
+  };
+}
+
+// Recupera l'ultimo backup automatico salvato (se esiste). Usato sia per il
+// controllo di sicurezza in fase di caricamento, sia dalla scheda Backup.
+async function fetchLatestBackup(){
+  try{
+    const snap = await db.collection(BACKUP_COLLECTION).orderBy('ts','desc').limit(1).get();
+    if(snap.empty) return null;
+    return snap.docs[0].data(); // {ts, data:{...}}
+  }catch(e){ return null; }
+}
+
+async function loadBackupsList(){
+  try{
+    const snap = await db.collection(BACKUP_COLLECTION).orderBy('ts','desc').limit(25).get();
+    backupsCache = snap.docs.map(d=>({id:d.id, ts:d.data().ts}));
+  }catch(e){ backupsCache = []; }
+}
+
+function formatBackupDate(iso){
+  try{ return new Date(iso).toLocaleString('it-IT'); }catch(e){ return iso; }
+}
+
+// Salva uno snapshot completo dei dati in una collezione SEPARATA da quella
+// principale, così un problema sulla collezione dati non intacca i backup.
+// Throttled per non scrivere ad ogni singola modifica.
+async function autoBackupIfDue(){
+  const now = Date.now();
+  if(now - lastAutoBackupAt < BACKUP_THROTTLE_MS) return;
+  lastAutoBackupAt = now;
+  try{
+    const iso = new Date().toISOString();
+    await db.collection(BACKUP_COLLECTION).doc(iso).set({ts: iso, data: snapshotState()});
+    await pruneOldBackups();
+  }catch(e){ /* un backup fallito non deve mai bloccare l'app */ }
+}
+
+async function pruneOldBackups(){
+  try{
+    const snap = await db.collection(BACKUP_COLLECTION).orderBy('ts','desc').get();
+    const extra = snap.docs.slice(BACKUP_KEEP);
+    if(!extra.length) return;
+    const batch = db.batch();
+    extra.forEach(d=>batch.delete(d.ref));
+    await batch.commit();
+  }catch(e){}
+}
+
+function flagAnomaly(docName){
+  if(!state.dataAnomaly) state.dataAnomaly = [];
+  if(!state.dataAnomaly.includes(docName)) state.dataAnomaly.push(docName);
+}
+
+async function restoreFromBackupDoc(id){
+  const doc = await db.collection(BACKUP_COLLECTION).doc(id).get();
+  if(!doc.exists){ showToast('Backup non trovato.'); return; }
+  applyBackupData(doc.data().data);
+  await persistAllDocs();
+  state.dataAnomaly = null;
+  showToast('Backup ripristinato e salvato.');
+  render();
+}
+
+function applyBackupData(data){
+  state.users = (data && data.users) || DEFAULT_USERS;
+  state.config = (data && data.config) || DEFAULT_CONFIG;
+  state.lists = (data && data.lists) || defaultLists();
+  state.submissions = (data && data.submissions) || {};
+  state.squadCompletion = (data && data.squadCompletion) || null;
+  state.manualAssignments = (data && data.manualAssignments) || {};
+}
+
+async function persistAllDocs(){
+  await Promise.all([persistUsers(), persistConfig(), persistLists(), persistSubs(), persistSquadCompletion(), persistManualAssignments()]);
 }
 
 async function loadAll(){
@@ -229,25 +321,48 @@ async function loadAll(){
   }
   const col = db.collection('fantacalcio_data');
 
-  col.doc('users').onSnapshot(async doc=>{
-    if(doc.exists){ state.users = doc.data().value; }
-    else { state.users = DEFAULT_USERS; await col.doc('users').set({value: state.users}); }
-    loadedDocs.add('users');
-    finishLoadingIfReady();
-    render();
-  }, err=>{ state.configError = err.message; state.loading=false; render(); });
+  // Controllo di sicurezza: verifichiamo UNA VOLTA, prima di tutto, se esiste
+  // già uno storico di backup automatici. Se esiste, vuol dire che l'app è
+  // già stata usata in passato con dati reali: in tal caso, se un documento
+  // principale risulta "non esistente", NON lo ricreiamo vuoto in automatico
+  // (potrebbe essere stato cancellato per errore) — carichiamo invece
+  // temporaneamente in memoria l'ultimo backup disponibile e segnaliamo
+  // l'anomalia, lasciando a un amministratore la decisione finale.
+  const latestBackup = await fetchLatestBackup();
+  const backupsExist = !!latestBackup;
+  if(backupsExist) state.anomalyBackupTs = latestBackup.ts;
 
-  col.doc('config').onSnapshot(async doc=>{
-    if(doc.exists){ state.config = doc.data().value; }
-    else { state.config = DEFAULT_CONFIG; await col.doc('config').set({value: state.config}); }
-    loadedDocs.add('config');
-    finishLoadingIfReady();
-    render();
-  });
+  function handleDoc(docName, applyValue, defaultValue, backupField){
+    col.doc(docName).onSnapshot(async doc=>{
+      if(doc.exists){
+        applyValue(doc.data().value);
+      } else if(backupsExist){
+        applyValue((latestBackup.data && latestBackup.data[backupField]) !== undefined ? latestBackup.data[backupField] : defaultValue);
+        flagAnomaly(docName);
+      } else {
+        applyValue(defaultValue);
+        await col.doc(docName).set({value: defaultValue});
+      }
+      loadedDocs.add(docName);
+      finishLoadingIfReady();
+      render();
+    }, docName==='users' ? (err=>{ state.configError = err.message; state.loading=false; render(); }) : undefined);
+  }
 
-    col.doc('lists').onSnapshot(async doc=>{
+  handleDoc('users', v=>{ state.users = v; }, DEFAULT_USERS, 'users');
+  handleDoc('config', v=>{ state.config = v; }, DEFAULT_CONFIG, 'config');
+  handleDoc('submissions', v=>{ state.submissions = v; }, {}, 'submissions');
+  handleDoc('squadCompletion', v=>{ state.squadCompletion = v; }, null, 'squadCompletion');
+  handleDoc('manualAssignments', v=>{ state.manualAssignments = v; }, {}, 'manualAssignments');
+
+  col.doc('lists').onSnapshot(async doc=>{
     if(doc.exists){ state.lists = doc.data().value; }
-    else { state.lists = defaultLists(); await col.doc('lists').set({value: state.lists}); }
+    else if(backupsExist){
+      state.lists = (latestBackup.data && latestBackup.data.lists) || defaultLists();
+      flagAnomaly('lists');
+    } else {
+      state.lists = defaultLists(); await col.doc('lists').set({value: state.lists});
+    }
     // Migrazione: se il documento esisteva già senza le liste aperte, le crea
     let needsMigration = false;
     OPEN_LISTS_META.forEach(m=>{
@@ -263,32 +378,8 @@ async function loadAll(){
         needsMigration = true;
       }
     });
-    if(needsMigration) await col.doc('lists').set({value: state.lists});
+    if(needsMigration && !state.dataAnomaly) await col.doc('lists').set({value: state.lists});
     loadedDocs.add('lists');
-    finishLoadingIfReady();
-    render();
-  });
-
-  col.doc('squadCompletion').onSnapshot(async doc=>{
-    if(doc.exists){ state.squadCompletion = doc.data().value; }
-    else { state.squadCompletion = null; await col.doc('squadCompletion').set({value: null}); }
-    loadedDocs.add('squadCompletion');
-    finishLoadingIfReady();
-    render();
-  });
-
-  col.doc('submissions').onSnapshot(async doc=>{
-    if(doc.exists){ state.submissions = doc.data().value; }
-    else { state.submissions = {}; await col.doc('submissions').set({value: state.submissions}); }
-    loadedDocs.add('submissions');
-    finishLoadingIfReady();
-    render();
-  });
-
-  col.doc('manualAssignments').onSnapshot(async doc=>{
-    if(doc.exists){ state.manualAssignments = doc.data().value; }
-    else { state.manualAssignments = {}; await col.doc('manualAssignments').set({value: state.manualAssignments}); }
-    loadedDocs.add('manualAssignments');
     finishLoadingIfReady();
     render();
   });
@@ -300,12 +391,12 @@ function finishLoadingIfReady(){
   }
 }
 
-async function persistUsers(){ await db.collection('fantacalcio_data').doc('users').set({value: state.users}); }
-async function persistConfig(){ await db.collection('fantacalcio_data').doc('config').set({value: state.config}); }
-async function persistLists(){ await db.collection('fantacalcio_data').doc('lists').set({value: state.lists}); }
-async function persistSubs(){ await db.collection('fantacalcio_data').doc('submissions').set({value: state.submissions}); }
-async function persistSquadCompletion(){ await db.collection('fantacalcio_data').doc('squadCompletion').set({value: state.squadCompletion}); }
-async function persistManualAssignments(){ await db.collection('fantacalcio_data').doc('manualAssignments').set({value: state.manualAssignments}); }
+async function persistUsers(){ await db.collection('fantacalcio_data').doc('users').set({value: state.users}); autoBackupIfDue(); }
+async function persistConfig(){ await db.collection('fantacalcio_data').doc('config').set({value: state.config}); autoBackupIfDue(); }
+async function persistLists(){ await db.collection('fantacalcio_data').doc('lists').set({value: state.lists}); autoBackupIfDue(); }
+async function persistSubs(){ await db.collection('fantacalcio_data').doc('submissions').set({value: state.submissions}); autoBackupIfDue(); }
+async function persistSquadCompletion(){ await db.collection('fantacalcio_data').doc('squadCompletion').set({value: state.squadCompletion}); autoBackupIfDue(); }
+async function persistManualAssignments(){ await db.collection('fantacalcio_data').doc('manualAssignments').set({value: state.manualAssignments}); autoBackupIfDue(); }
 
 function showToast(msg){
   state.toast = msg;
@@ -408,10 +499,12 @@ function renderAdmin(){
     ['monitoraggio','Monitoraggio live'],
     ['assegnazioni','Assegnazioni'],
     ['export','Esporta'],
+    ['backup','Backup'],
   ];
   return `
   ${renderTopbar()}
   <div class="wrap">
+    ${renderAnomalyBanner(true)}
     <div class="tabs">
       ${tabs.map(([k,l])=>`<button class="tab-btn ${state.adminTab===k?'active':''}" data-tab="${k}">${l}</button>`).join('')}
     </div>
@@ -419,6 +512,25 @@ function renderAdmin(){
   </div>
   ${state.toast?`<div class="toast">${esc(state.toast)}</div>`:''}
   `;
+}
+
+function renderAnomalyBanner(isAdmin){
+  if(!state.dataAnomaly || !state.dataAnomaly.length) return '';
+  const when = state.anomalyBackupTs ? formatBackupDate(state.anomalyBackupTs) : 'sconosciuta';
+  if(!isAdmin){
+    return `<div class="panel" style="border:2px solid var(--coral);background:var(--coral-l);">
+      <h2 style="color:#7a2718;">⚠️ Dati temporaneamente ripristinati da backup</h2>
+      <p class="desc" style="color:#7a2718;">L'app ha rilevato un'anomalia nei dati e sta mostrando una copia di sicurezza (backup del ${esc(when)}) non ancora confermata. Contatta l'amministratore: deve confermare il ripristino dalla scheda "Backup".</p>
+    </div>`;
+  }
+  return `<div class="panel" style="border:2px solid var(--coral);background:var(--coral-l);">
+    <h2 style="color:#7a2718;">⚠️ Dati mancanti rilevati: ${state.dataAnomaly.map(esc).join(', ')}</h2>
+    <p class="desc" style="color:#7a2718;">Questi documenti risultano assenti sul database, ma esiste uno storico di backup automatici — quindi NON li abbiamo ricreati vuoti in automatico, per non perdere altri dati. Stai vedendo ora una copia temporanea (in memoria, non ancora salvata) dell'ultimo backup disponibile, del <b>${esc(when)}</b>.</p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+      <button class="btn-primary" style="width:auto;" id="btn-confirm-anomaly-restore">Conferma e salva questo backup adesso</button>
+      <button class="btn-secondary" id="btn-goto-backup-tab">Scegli un backup diverso / inizializza vuoto</button>
+    </div>
+  </div>`;
 }
 
 function renderAdminTab(){
@@ -430,7 +542,39 @@ function renderAdminTab(){
   if(state.adminTab==='export') return renderAdminExport();
   if(state.adminTab==='liste_aperte') return renderAdminListeAperte();
   if(state.adminTab==='completamento') return renderAdminCompletamento();
+  if(state.adminTab==='backup') return renderAdminBackup();
   return '';
+}
+
+function renderAdminBackup(){
+  const rows = backupsCache.map(b=>`
+    <tr>
+      <td>${esc(formatBackupDate(b.ts))}</td>
+      <td><button class="btn-small" data-restore-backup="${esc(b.id)}">Ripristina questo</button></td>
+    </tr>`).join('');
+  return `
+  <div class="panel">
+    <h2>Backup manuale</h2>
+    <p class="desc">Scarica una copia di tutti i dati attuali sul tuo computer (utenti, liste, offerte, assegnazioni), o ripristina da un file scaricato in precedenza.</p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+      <button class="btn-primary" style="width:auto;" id="btn-download-backup">Scarica backup adesso (.json)</button>
+      <label class="btn-secondary" style="cursor:pointer;">Importa da file .json<input type="file" accept="application/json" id="input-import-backup" style="display:none;"></label>
+    </div>
+  </div>
+  <div class="panel">
+    <h2>Backup automatici</h2>
+    <p class="desc">L'app salva automaticamente una copia dei dati ad ogni modifica (al massimo una ogni 2 minuti, ultimi ${BACKUP_KEEP} conservati). Usali per tornare a un punto preciso nel tempo.</p>
+    <table>
+      <thead><tr><th>Data e ora</th><th></th></tr></thead>
+      <tbody>${rows || '<tr><td colspan="2" class="empty-note">Nessun backup automatico ancora disponibile (verrà creato alla prossima modifica).</td></tr>'}</tbody>
+    </table>
+  </div>
+  ${state.dataAnomaly && state.dataAnomaly.length ? `
+  <div class="panel">
+    <h2>Inizializzazione vuota</h2>
+    <p class="desc">Da usare solo se sei sicuro che i documenti mancanti (${state.dataAnomaly.map(esc).join(', ')}) debbano davvero partire da zero, e non da un backup.</p>
+    <button class="btn-danger" id="btn-force-empty-init">Inizializza comunque vuoto</button>
+  </div>` : ''}`;
 }
 
 function renderAdminUtenti(){
@@ -757,8 +901,68 @@ function renderAdminExport(){
 
 function attachAdminHandlers(){
   document.querySelectorAll('.tab-btn').forEach(b=>{
-    b.addEventListener('click', ()=>{ state.adminTab = b.dataset.tab; render(); });
+    b.addEventListener('click', ()=>{
+      state.adminTab = b.dataset.tab;
+      if(state.adminTab==='backup') loadBackupsList().then(render);
+      render();
+    });
   });
+
+  const confirmAnomalyBtn = document.getElementById('btn-confirm-anomaly-restore');
+  if(confirmAnomalyBtn) confirmAnomalyBtn.addEventListener('click', async ()=>{
+    if(!confirm('Salvare permanentemente questo backup sui dati live? Sostituirà i documenti mancanti.')) return;
+    await persistAllDocs();
+    state.dataAnomaly = null;
+    showToast('Backup confermato e salvato.');
+    render();
+  });
+  const gotoBackupBtn = document.getElementById('btn-goto-backup-tab');
+  if(gotoBackupBtn) gotoBackupBtn.addEventListener('click', ()=>{
+    state.adminTab = 'backup';
+    loadBackupsList().then(render);
+    render();
+  });
+
+  const dlBackupBtn = document.getElementById('btn-download-backup');
+  if(dlBackupBtn) dlBackupBtn.addEventListener('click', ()=>{
+    const payload = {exportedAt: new Date().toISOString(), ...snapshotState()};
+    const blob = new Blob([JSON.stringify(payload,null,2)], {type:'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `fantacalcio_backup_${Date.now()}.json`;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  });
+  const importBackupInput = document.getElementById('input-import-backup');
+  if(importBackupInput) importBackupInput.addEventListener('change', async ()=>{
+    const file = importBackupInput.files[0];
+    if(!file) return;
+    if(!confirm('Importare questo file sovrascriverà TUTTI i dati attuali (utenti, liste, offerte, assegnazioni). Continuare?')){ importBackupInput.value=''; return; }
+    try{
+      const data = JSON.parse(await file.text());
+      applyBackupData(data);
+      await persistAllDocs();
+      state.dataAnomaly = null;
+      showToast('Backup importato e salvato.');
+      render();
+    }catch(e){ showToast('File non valido: ' + (e && e.message || e)); }
+  });
+  document.querySelectorAll('[data-restore-backup]').forEach(b=>{
+    b.addEventListener('click', async ()=>{
+      if(!confirm('Ripristinare questo backup sovrascriverà TUTTI i dati attuali. Continuare?')) return;
+      await restoreFromBackupDoc(b.dataset.restoreBackup);
+    });
+  });
+  const forceEmptyBtn = document.getElementById('btn-force-empty-init');
+  if(forceEmptyBtn) forceEmptyBtn.addEventListener('click', async ()=>{
+    if(!confirm('Questo cancellerà definitivamente i dati mostrati ora (che provengono da un backup) e inizializzerà tutto vuoto. Sei sicuro?')) return;
+    applyBackupData(null); // riporta tutto ai valori di default
+    await persistAllDocs();
+    state.dataAnomaly = null;
+    showToast('Inizializzato vuoto.');
+    render();
+  });
+
   const changeAdminPassBtn = document.getElementById('btn-change-admin-pass');
   if(changeAdminPassBtn) changeAdminPassBtn.addEventListener('click', async ()=>{
     const cur = document.getElementById('ap-current').value;
@@ -1273,6 +1477,7 @@ function renderUser(){
   return `
   ${renderTopbar()}
   <div class="wrap">
+    ${renderAnomalyBanner(false)}
     <div class="pitch-wrap">
       <div class="formation">
         ${rows.map(r=>`<div class="form-row">${LISTS_META.filter(m=>m.row===r).map(m=>renderTile(m)).join('')}</div>`).join('')}
