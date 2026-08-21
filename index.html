@@ -189,6 +189,7 @@ let state = {
   manualAssignments: {}, // {user:[{id,player,price,role}]} - assegnazioni manuali admin pre-completamento
   dataAnomaly: null, // array di nomi documento che risultano assenti in modo sospetto (vedi loadAll)
   anomalyBackupTs: null, // timestamp del backup usato per il recupero temporaneo in memoria
+  prefImportResult: null, // esito dell'ultimo import di preferenze da file
 };
 
 function uid(){ return Math.random().toString(36).slice(2,10); }
@@ -202,6 +203,97 @@ function defaultLists(){
     o[m.id] = {id:m.id, label:m.label, players:[], openAt:null, closeAt:null, status:'setup', assigned:null, assignedPlayers:null, lockedAt:{}};
   });
   return o;
+}
+
+// ================= IMPORT/EXPORT PREFERENZE =================
+// Formato riga: lista;utente;giocatore;offerta (accetta anche virgola o tab).
+// "lista" può essere l'ID interno (GK, DEF1...) o l'etichetta visibile (Portieri, Difensori 1...).
+// L'ordine delle righe per stesso utente+lista determina l'ordine di preferenza.
+
+function resolveListId(raw){
+  if(!raw) return null;
+  const s = String(raw).trim().toLowerCase();
+  const all = [...LISTS_META, ...OPEN_LISTS_META];
+  const byId = all.find(m=>m.id.toLowerCase()===s);
+  if(byId) return byId.id;
+  const byLabel = all.find(m=>m.label.toLowerCase()===s);
+  return byLabel ? byLabel.id : null;
+}
+
+function findPlayerInList(list, name){
+  const s = String(name||'').trim().toLowerCase();
+  return (list.players||[]).find(p=>p.name.trim().toLowerCase()===s) || null;
+}
+
+function findUserByName(uname){
+  const s = String(uname||'').trim().toLowerCase();
+  return state.users.find(u=>u.username.trim().toLowerCase()===s) || null;
+}
+
+function parsePrefImportLine(line){
+  const parts = line.split(/[;,\t]/).map(s=>s.trim());
+  if(parts.length<4) return null;
+  return {lista:parts[0], utente:parts[1], giocatore:parts[2], offerta:parts[3]};
+}
+
+// Importa preferenze in blocco in state.submissions (NON persiste da solo:
+// chi chiama deve poi salvare con persistSubs()/persistLists()).
+async function importPreferencesFromText(text){
+  const lines = text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+  const startIdx = /^(lista|list)\b/i.test(lines[0]||'') ? 1 : 0;
+  const grouped = {}; // `${listId}__${username}` -> [{player,bid}]
+  const errors = [];
+  let okCount = 0;
+  for(let i=startIdx;i<lines.length;i++){
+    const rowNum = i+1;
+    const row = parsePrefImportLine(lines[i]);
+    if(!row){ errors.push(`Riga ${rowNum}: servono 4 campi (lista;utente;giocatore;offerta).`); continue; }
+    const listId = resolveListId(row.lista);
+    if(!listId){ errors.push(`Riga ${rowNum}: lista "${row.lista}" non riconosciuta.`); continue; }
+    const user = findUserByName(row.utente);
+    if(!user){ errors.push(`Riga ${rowNum}: utente "${row.utente}" non trovato.`); continue; }
+    const list = state.lists[listId];
+    const player = findPlayerInList(list, row.giocatore);
+    if(!player){ errors.push(`Riga ${rowNum}: giocatore "${row.giocatore}" non trovato in ${list.label}.`); continue; }
+    const bid = parseFloat(String(row.offerta).replace(',','.'));
+    if(isNaN(bid) || bid < player.minBid){ errors.push(`Riga ${rowNum}: offerta non valida per ${player.name} (minimo ${player.minBid}).`); continue; }
+    const key = listId+'__'+user.username;
+    if(!grouped[key]) grouped[key] = [];
+    const isFixed = LISTS_META.some(m=>m.id===listId);
+    if(isFixed && grouped[key].length>=6){ errors.push(`Riga ${rowNum}: superate le 6 preferenze per ${list.label}/${user.username}, riga ignorata.`); continue; }
+    if(grouped[key].some(p=>p.player===player.name)){ errors.push(`Riga ${rowNum}: ${player.name} già inserito per ${user.username} in questa lista.`); continue; }
+    grouped[key].push({player: player.name, bid});
+    okCount++;
+  }
+  const usersAffected = new Set();
+  Object.keys(grouped).forEach(key=>{
+    const sepIdx = key.indexOf('__');
+    const listId = key.slice(0,sepIdx), username = key.slice(sepIdx+2);
+    usersAffected.add(username);
+    if(!state.submissions[listId]) state.submissions[listId] = {};
+    state.submissions[listId][username] = grouped[key];
+    const list = state.lists[listId];
+    if(!list.lockedAt) list.lockedAt = {};
+    if(!(username in list.lockedAt)) list.lockedAt[username] = list.openAt || null;
+  });
+  return {okCount, errors, usersAffected: usersAffected.size};
+}
+
+function exportPreferencesCSV(){
+  const rows = [['lista','utente','giocatore','offerta']];
+  [...LISTS_META, ...OPEN_LISTS_META].forEach(m=>{
+    const subs = state.submissions[m.id] || {};
+    Object.keys(subs).forEach(username=>{
+      (subs[username]||[]).forEach(p=>{ rows.push([m.label, username, p.player, p.bid]); });
+    });
+  });
+  const csv = rows.map(r=>r.map(c=>String(c).replace(/;/g,',')).join(';')).join('\n');
+  const blob = new Blob([csv], {type:'text/csv'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `preferenze_${Date.now()}.csv`;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
 }
 
 const DEFAULT_USERS = [{username:'admin', password:'admin', role:'admin', credits:0}];
@@ -500,6 +592,7 @@ function renderAdmin(){
     ['assegnazioni','Assegnazioni'],
     ['export','Esporta'],
     ['backup','Backup'],
+    ['preferenze','Preferenze utenti'],
   ];
   return `
   ${renderTopbar()}
@@ -543,7 +636,42 @@ function renderAdminTab(){
   if(state.adminTab==='liste_aperte') return renderAdminListeAperte();
   if(state.adminTab==='completamento') return renderAdminCompletamento();
   if(state.adminTab==='backup') return renderAdminBackup();
+  if(state.adminTab==='preferenze') return renderAdminPreferenze();
   return '';
+}
+
+function renderAdminPreferenze(){
+  const listOptions = [...LISTS_META, ...OPEN_LISTS_META].map(m=>`${m.id} (${m.label})`).join(', ');
+  return `
+  <div class="panel">
+    <h2>Importa preferenze da file</h2>
+    <p class="desc">Una riga per ogni preferenza, campi separati da <b>;</b> (vanno bene anche virgola o tab):<br>
+    <code>lista;utente;giocatore;offerta</code> — esempio: <code>Portieri;mario;Meret;15</code>.<br>
+    Per "lista" puoi usare il nome visibile (es. "Portieri") o l'ID interno: ${esc(listOptions)}.<br>
+    L'ordine delle righe per lo stesso utente+lista determina l'ordine di preferenza. Le liste fisse (Portieri/Difensori/Centrocampisti/Attaccanti) accettano fino a 6 preferenze per utente; le liste aperte anche meno. I nomi dei giocatori devono corrispondere a quelli già presenti nella lista su questa app.</p>
+    <div class="field">
+      <label>Incolla qui il contenuto (oppure carica un file sotto)</label>
+      <textarea id="pref-import-text" rows="6" style="width:100%;padding:10px;border:1px solid var(--line);border-radius:4px;font-family:'Roboto Mono',monospace;font-size:12px;" placeholder="lista;utente;giocatore;offerta"></textarea>
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+      <label class="btn-secondary" style="cursor:pointer;">Carica file .csv<input type="file" accept=".csv,text/csv,text/plain" id="pref-import-file" style="display:none;"></label>
+      <button class="btn-primary" style="width:auto;" id="btn-import-preferences">Importa preferenze</button>
+    </div>
+    ${state.prefImportResult ? renderPrefImportResult(state.prefImportResult) : ''}
+  </div>
+  <div class="panel">
+    <h2>Esporta preferenze attuali</h2>
+    <p class="desc">Scarica in .csv tutte le preferenze già inserite in app — utile come backup e come base pronta per un futuro re-import (stesso formato).</p>
+    <button class="btn-secondary" id="btn-export-preferences">Scarica preferenze (.csv)</button>
+  </div>`;
+}
+
+function renderPrefImportResult(r){
+  return `<div class="list-card" style="margin-top:14px;">
+    <h3>Risultato import</h3>
+    <p class="hint">${r.okCount} preferenze importate per ${r.usersAffected} utenti.</p>
+    ${r.errors.length ? `<p class="hint" style="color:var(--coral);">${r.errors.length} righe ignorate:</p><ul style="font-size:12px;color:var(--ink-soft);max-height:180px;overflow-y:auto;margin:0;padding-left:18px;">${r.errors.map(e=>`<li>${esc(e)}</li>`).join('')}</ul>` : ''}
+  </div>`;
 }
 
 function renderAdminBackup(){
@@ -962,6 +1090,29 @@ function attachAdminHandlers(){
     showToast('Inizializzato vuoto.');
     render();
   });
+
+  const importPrefFileInput = document.getElementById('pref-import-file');
+  if(importPrefFileInput) importPrefFileInput.addEventListener('change', async ()=>{
+    const file = importPrefFileInput.files[0];
+    if(!file) return;
+    document.getElementById('pref-import-text').value = await file.text();
+  });
+  const importPrefBtn = document.getElementById('btn-import-preferences');
+  if(importPrefBtn) importPrefBtn.addEventListener('click', async ()=>{
+    const text = document.getElementById('pref-import-text').value;
+    if(!text.trim()){ showToast('Incolla o carica prima il contenuto.'); return; }
+    const result = await importPreferencesFromText(text);
+    state.prefImportResult = result;
+    if(result.okCount>0){
+      await Promise.all([persistSubs(), persistLists()]);
+      showToast(`${result.okCount} preferenze importate.`);
+    } else {
+      showToast('Nessuna preferenza valida trovata nel file.');
+    }
+    render();
+  });
+  const exportPrefBtn = document.getElementById('btn-export-preferences');
+  if(exportPrefBtn) exportPrefBtn.addEventListener('click', exportPreferencesCSV);
 
   const changeAdminPassBtn = document.getElementById('btn-change-admin-pass');
   if(changeAdminPassBtn) changeAdminPassBtn.addEventListener('click', async ()=>{
