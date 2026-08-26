@@ -998,10 +998,16 @@ function renderAdminRiparazione(){
 
 function renderRosterImportPreview(){
   const nonAdminUsers = state.users.filter(u=>u.role!=='admin');
+  const roleCounts = players => {
+    const c = {P:0,D:0,C:0,A:0};
+    players.forEach(p=>{ if(c[p.role]!=null) c[p.role]++; });
+    const unknown = players.filter(p=>!c.hasOwnProperty(p.role) || !p.role).length;
+    return `P:${c.P} D:${c.D} C:${c.C} A:${c.A}${unknown?` <span style="color:var(--coral);">(${unknown} senza ruolo)</span>`:''}`;
+  };
   return `<div class="list-card" style="margin-top:14px;">
     <h3>Anteprima import (${state.rosterImport.teams.length} squadre trovate nel file)</h3>
     <table>
-      <tr><th>Nome nel file</th><th>Utente app</th><th>Giocatori</th></tr>
+      <tr><th>Nome nel file</th><th>Utente app</th><th>Giocatori</th><th>Ruoli</th></tr>
       ${state.rosterImport.teams.map((t,i)=>`
         <tr>
           <td>${esc(t.excelName)}</td>
@@ -1010,6 +1016,7 @@ function renderRosterImportPreview(){
             ${nonAdminUsers.map(u=>`<option value="${esc(u.username)}" ${t.username===u.username?'selected':''}>${esc(u.username)}</option>`).join('')}
           </select></td>
           <td>${t.players.length}</td>
+          <td style="font-family:'Roboto Mono',monospace;font-size:12px;">${roleCounts(t.players)}</td>
         </tr>`).join('')}
     </table>
     <div class="modal-actions" style="justify-content:flex-start;margin-top:14px;">
@@ -1395,7 +1402,7 @@ function attachAdminHandlers(){
     if(mapped.length===0){ showToast('Associa almeno una squadra a un utente prima di confermare.'); return; }
     if(!confirm(`Questo sostituirà la rosa di ${mapped.length} utenti con quella del file. Continuare?`)) return;
     const newRosters = {...(state.finalRosters||{})};
-    mapped.forEach(t=>{ newRosters[t.username] = t.players.map(p=>({player:p.name, price:p.price})); });
+    mapped.forEach(t=>{ newRosters[t.username] = t.players.map(p=>({player:p.name, price:p.price, role:p.role||''})); });
     state.finalRosters = newRosters;
     state.finalRostersUpdatedAt = new Date().toISOString();
     state.rosterImport = null;
@@ -1806,18 +1813,18 @@ function buildComputedRoster(username){
   LISTS_META.forEach(m=>{
     const list = state.lists[m.id];
     const a = list && list.assigned && list.assigned[username];
-    if(a && a.player) out.push({player:a.player, price:Number(a.price)||0});
+    if(a && a.player) out.push({player:a.player, price:Number(a.price)||0, role:LIST_ROLE[m.id]||''});
   });
   OPEN_LISTS_META.forEach(m=>{
     const list = state.lists[m.id];
     if(!list || !list.assigned) return;
-    (list.assigned[username]||[]).forEach(a=>{ out.push({player:a.player, price:Number(a.price)||0}); });
+    (list.assigned[username]||[]).forEach(a=>{ out.push({player:a.player, price:Number(a.price)||0, role:a.role||''}); });
   });
   if(state.squadCompletion && state.squadCompletion.assigned){
-    (state.squadCompletion.assigned[username]||[]).forEach(a=>{ out.push({player:a.player, price:Number(a.price)||0}); });
+    (state.squadCompletion.assigned[username]||[]).forEach(a=>{ out.push({player:a.player, price:Number(a.price)||0, role:a.role||''}); });
   }
   if(state.manualAssignments){
-    (state.manualAssignments[username]||[]).forEach(a=>{ out.push({player:a.player, price:Number(a.price)||0}); });
+    (state.manualAssignments[username]||[]).forEach(a=>{ out.push({player:a.player, price:Number(a.price)||0, role:a.role||''}); });
   }
   return out;
 }
@@ -1830,7 +1837,7 @@ function buildComputedRoster(username){
 // rose successivo) e non torna più tra i giocatori dell'ex proprietario.
 function getUserRoster(username){
   const base = (state.finalRosters && state.finalRosters[username])
-    ? state.finalRosters[username].map(p=>({player:p.player, price:Number(p.price)||0}))
+    ? state.finalRosters[username].map(p=>({player:p.player, price:Number(p.price)||0, role:p.role||''}))
     : buildComputedRoster(username);
   const listedNow = new Set((state.repairListings||[]).filter(l=>l.username===username).map(l=>l.player));
   return base.filter(p=>!listedNow.has(p.player));
@@ -1917,24 +1924,60 @@ async function computeRepairAssignment(){
   await Promise.all([persistLists(), persistUsers(), persistRepairListings(), persistFinalRosters()]);
 }
 
+// Ordine fisso dei ruoli nel blocco di ogni squadra: le prime N1 righe sono
+// Portieri, le N2 successive Difensori, le N3 successive Centrocampisti, le
+// ultime N4 Attaccanti (schema standard 3P/8D/8C/4A, riconoscibile anche dal
+// colore di sfondo delle celle nel file originale). La posizione è fissa per
+// slot di rosa, quindi va contata sulla riga assoluta del blocco e non sugli
+// indici dei soli giocatori trovati, altrimenti un giocatore mancante
+// sfaserebbe i ruoli successivi.
+const ROSTER_ROLE_SLOTS = [
+  {role:'P', count:3},
+  {role:'D', count:8},
+  {role:'C', count:8},
+  {role:'A', count:4},
+];
+function roleForSlot(slotIndex){
+  // slotIndex: posizione 0-based della riga all'interno del blocco squadra
+  // (0 = prima riga dopo l'intestazione nome/costo).
+  let acc = 0;
+  for(const s of ROSTER_ROLE_SLOTS){
+    if(slotIndex < acc + s.count) return s.role;
+    acc += s.count;
+  }
+  return null; // oltre lo schema noto: ruolo sconosciuto, non blocchiamo l'import
+}
+
 // Legge una griglia (array di array, come restituita da XLSX
 // sheet_to_json({header:1})) nello stesso formato usato dall'export
 // dell'app: per ogni squadra un blocco di 3 colonne (nome, costo, vuota),
-// righe = giocatori, blocco termina alla riga "totale".
+// righe = giocatori, blocco termina alla riga "totale". Il ruolo di ogni
+// giocatore è dedotto dalla posizione fissa della riga nel blocco (vedi
+// ROSTER_ROLE_SLOTS sopra), non dal testo o dal colore della cella, perché
+// XLSX.utils.sheet_to_json non porta con sé la formattazione delle celle.
 function parseRosterGrid(grid){
+  // Usiamo la larghezza massima fra TUTTE le righe (non solo la riga 0)
+  // per decidere quante colonne/squadre scandire: se la riga di
+  // intestazione risulta più corta delle righe sottostanti (es. l'ultima
+  // squadra ha nome corto o celle formattate in modo diverso), usare solo
+  // header.length tagliava fuori le squadre più a destra.
+  const colCount = grid.reduce((max,row)=> Math.max(max, row ? row.length : 0), 0);
   const header = grid[0] || [];
   const teams = [];
-  for(let c=0;c<header.length;c+=3){
+  for(let c=0;c<colCount;c+=3){
     const teamName = header[c];
     if(teamName==null || String(teamName).trim()==='') continue;
     const players = [];
+    let slotIndex = 0;
     for(let r=1;r<grid.length;r++){
       const row = grid[r] || [];
       const name = row[c];
-      if(name==null || String(name).trim()===''){ continue; }
-      if(String(name).trim().toLowerCase()==='totale') break;
+      if(name!=null && String(name).trim().toLowerCase()==='totale') break;
+      if(name==null || String(name).trim()===''){ slotIndex++; continue; }
       const price = parseFloat(row[c+1]);
-      players.push({name:String(name).trim(), price:isNaN(price)?0:price});
+      const role = roleForSlot(slotIndex);
+      players.push({name:String(name).trim(), price:isNaN(price)?0:price, role});
+      slotIndex++;
     }
     teams.push({excelName:String(teamName).trim(), players});
   }
@@ -1965,10 +2008,11 @@ function renderRepairNominationPanel(){
           <td style="max-width:110px;"><input type="number" min="0" value="${p.price}" data-nominate-min-idx="${i}" style="width:90px;padding:5px 8px;border:1px solid var(--line);border-radius:4px;"></td>
           <td style="max-width:130px;">
             <select data-nominate-role-idx="${i}" style="padding:5px 8px;border:1px solid var(--line);border-radius:4px;">
-              <option value="P">Portiere</option>
-              <option value="D">Difensore</option>
-              <option value="C">Centrocampista</option>
-              <option value="A">Attaccante</option>
+              <option value="">-- seleziona --</option>
+              <option value="P" ${p.role==='P'?'selected':''}>Portiere</option>
+              <option value="D" ${p.role==='D'?'selected':''}>Difensore</option>
+              <option value="C" ${p.role==='C'?'selected':''}>Centrocampista</option>
+              <option value="A" ${p.role==='A'?'selected':''}>Attaccante</option>
             </select>
           </td>
           <td><button class="btn-small" data-nominate-idx="${i}">Metti all'asta</button></td>
