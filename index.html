@@ -163,6 +163,7 @@ const LISTS_META = [
 const OPEN_LISTS_META = [
   {id:'OPEN1', label:'Lista aperta round 1', row:4},
   {id:'OPEN2', label:'Lista aperta round 2', row:4},
+  {id:'REPAIR', label:'Asta di riparazione', row:5},
 ];
 
 const ROLE_QUOTA = {D:8, C:8, A:4};
@@ -190,6 +191,10 @@ let state = {
   dataAnomaly: null, // array di nomi documento che risultano assenti in modo sospetto (vedi loadAll)
   anomalyBackupTs: null, // timestamp del backup usato per il recupero temporaneo in memoria
   prefImportResult: null, // esito dell'ultimo import di preferenze da file
+  finalRosters: null, // {username:[{player,price}]} - fonte di verità rose caricata da admin da file, sostituisce il calcolo automatico
+  finalRostersUpdatedAt: null,
+  rosterImport: null, // {teams:[{excelName, username, players:[{name,price}]}]} - anteprima import rose in corso, non persistita
+  repairListings: [], // [{id, username, player, price, minBid, role, addedAt, resolved, wonBy, finalPrice, returnedUnsold}]
 };
 
 function uid(){ return Math.random().toString(36).slice(2,10); }
@@ -317,6 +322,8 @@ function snapshotState(){
     submissions: state.submissions,
     squadCompletion: state.squadCompletion,
     manualAssignments: state.manualAssignments,
+    finalRosters: state.finalRosters,
+    repairListings: state.repairListings,
   };
 }
 
@@ -388,10 +395,12 @@ function applyBackupData(data){
   state.submissions = (data && data.submissions) || {};
   state.squadCompletion = (data && data.squadCompletion) || null;
   state.manualAssignments = (data && data.manualAssignments) || {};
+  state.finalRosters = (data && data.finalRosters) || null;
+  state.repairListings = (data && data.repairListings) || [];
 }
 
 async function persistAllDocs(){
-  await Promise.all([persistUsers(), persistConfig(), persistLists(), persistSubs(), persistSquadCompletion(), persistManualAssignments()]);
+  await Promise.all([persistUsers(), persistConfig(), persistLists(), persistSubs(), persistSquadCompletion(), persistManualAssignments(), persistFinalRosters(), persistRepairListings()]);
 }
 
 async function loadAll(){
@@ -446,6 +455,8 @@ async function loadAll(){
   handleDoc('submissions', v=>{ state.submissions = v; }, {}, 'submissions');
   handleDoc('squadCompletion', v=>{ state.squadCompletion = v; }, null, 'squadCompletion');
   handleDoc('manualAssignments', v=>{ state.manualAssignments = v; }, {}, 'manualAssignments');
+  handleDoc('finalRosters', v=>{ state.finalRosters = v; }, null, 'finalRosters');
+  handleDoc('repairListings', v=>{ state.repairListings = v; }, [], 'repairListings');
 
   col.doc('lists').onSnapshot(async doc=>{
     if(doc.exists){ state.lists = doc.data().value; }
@@ -478,7 +489,7 @@ async function loadAll(){
 }
 
 function finishLoadingIfReady(){
-  if(['users','config','lists','submissions','squadCompletion','manualAssignments'].every(k=>loadedDocs.has(k))){
+  if(['users','config','lists','submissions','squadCompletion','manualAssignments','finalRosters','repairListings'].every(k=>loadedDocs.has(k))){
     state.loading = false;
   }
 }
@@ -489,6 +500,8 @@ async function persistLists(){ await db.collection('fantacalcio_data').doc('list
 async function persistSubs(){ await db.collection('fantacalcio_data').doc('submissions').set({value: state.submissions}); autoBackupIfDue(); }
 async function persistSquadCompletion(){ await db.collection('fantacalcio_data').doc('squadCompletion').set({value: state.squadCompletion}); autoBackupIfDue(); }
 async function persistManualAssignments(){ await db.collection('fantacalcio_data').doc('manualAssignments').set({value: state.manualAssignments}); autoBackupIfDue(); }
+async function persistFinalRosters(){ await db.collection('fantacalcio_data').doc('finalRosters').set({value: state.finalRosters}); autoBackupIfDue(); }
+async function persistRepairListings(){ await db.collection('fantacalcio_data').doc('repairListings').set({value: state.repairListings}); autoBackupIfDue(); }
 
 function showToast(msg){
   state.toast = msg;
@@ -587,6 +600,7 @@ function renderAdmin(){
     ['liste','Setup liste'],
     ['liste_aperte','Liste aperte'],
     ['completamento','Completamento rose'],
+    ['riparazione','Asta riparazione'],
     ['crediti','Crediti'],
     ['monitoraggio','Monitoraggio live'],
     ['assegnazioni','Assegnazioni'],
@@ -635,6 +649,7 @@ function renderAdminTab(){
   if(state.adminTab==='export') return renderAdminExport();
   if(state.adminTab==='liste_aperte') return renderAdminListeAperte();
   if(state.adminTab==='completamento') return renderAdminCompletamento();
+  if(state.adminTab==='riparazione') return renderAdminRiparazione();
   if(state.adminTab==='backup') return renderAdminBackup();
   if(state.adminTab==='preferenze') return renderAdminPreferenze();
   return '';
@@ -912,6 +927,95 @@ function renderAdminCompletamento(){
     </table>
   </div>`:''}
   `;
+}
+
+function renderAdminRiparazione(){
+  const list = state.lists.REPAIR;
+  const st = listStatus(list);
+  const badgeClass = st==='open'?'badge-open':st==='closed'?'badge-closed':st==='computed'?'badge-computed':'badge-setup';
+  const badgeText = st==='open'?'Aperta':st==='closed'?'Chiusa':st==='computed'?'Assegnata':'Da configurare';
+  const pending = (state.repairListings||[]).filter(l=>!l.resolved && !list.players.some(p=>p.name===l.player));
+  const resolved = (state.repairListings||[]).filter(l=>l.resolved).sort((a,b)=> new Date(b.addedAt)-new Date(a.addedAt)).slice(0,30);
+  return `
+  <div class="panel">
+    <h2>Importa rose complete aggiornate</h2>
+    <p class="desc">Carica un file Excel nello stesso formato dell'export dell'app (un blocco di 3 colonne per squadra: nome, costo, vuota — righe = giocatori, terminate da "totale"). Diventa la nuova fonte di verità per la rosa di ciascun utente, al posto di quella calcolata automaticamente dalle liste: usalo se hai corretto a mano le assegnazioni durante il completamento rose.</p>
+    <input type="file" accept=".xlsx" id="roster-import-file">
+    ${state.rosterImport ? renderRosterImportPreview() : ''}
+    <p class="hint" style="margin-top:10px;">${state.finalRosters ? `Rose aggiornate caricate${state.finalRostersUpdatedAt ? ' il ' + esc(formatBackupDate(state.finalRostersUpdatedAt)) : ''}.` : 'Nessuna rosa importata: le rose sono ancora calcolate automaticamente dalle liste.'}</p>
+  </div>
+  <div class="panel">
+    <h2>Nomine in attesa</h2>
+    <p class="desc">Giocatori che gli utenti hanno messo all'asta di riparazione ma non ancora inseriti nel listone del round corrente.</p>
+    ${pending.length===0 ? '<p class="empty-note">Nessuna nomina in attesa.</p>' : `
+    <table><tr><th>Utente</th><th>Giocatore</th><th>Base d'asta</th></tr>
+      ${pending.map(l=>`<tr><td>${esc(l.username)}</td><td>${esc(l.player)}</td><td class="mono">${fmtCredits(l.minBid)}</td></tr>`).join('')}
+    </table>`}
+    <button class="btn-primary" style="width:auto;margin-top:12px;" id="btn-add-repair-nominations" ${pending.length===0?'disabled':''}>Aggiungi le nomine in attesa al listone (${pending.length})</button>
+  </div>
+  <div class="list-card">
+    <h3>${esc(list.label)} <span><span class="badge ${badgeClass}">${badgeText}</span></span></h3>
+    <div class="players-count" style="margin-bottom:10px;">${list.players.length} giocatori nel listone</div>
+    <div class="row-flex">
+      <div class="field">
+        <label>Apertura</label>
+        <input type="datetime-local" data-open="REPAIR" value="${list.openAt?toLocalInput(list.openAt):''}">
+      </div>
+      <div class="field">
+        <label>Chiusura</label>
+        <input type="datetime-local" data-close="REPAIR" value="${list.closeAt?toLocalInput(list.closeAt):''}">
+      </div>
+      <button class="btn-secondary" data-save-times="REPAIR">Salva orari</button>
+    </div>
+    <div class="row-flex" style="margin-top:8px;">
+      <div class="field" style="max-width:140px;">
+        <label>Apri per (min)</label>
+        <input type="number" min="1" value="60" data-quick-min="REPAIR">
+      </div>
+      <button class="btn-secondary" data-quick-open="REPAIR">Apri ora</button>
+      <button class="btn-small" data-close-now="REPAIR">Chiudi ora</button>
+      <button class="btn-primary" style="width:auto;" id="btn-compute-repair" ${list.players.length===0?'disabled':''}>${list.status==='computed'?'Ricalcola assegnazione':'Calcola assegnazione'}</button>
+    </div>
+    ${list.players.length>0 ? `<details style="margin-top:10px;"><summary style="cursor:pointer;font-size:12px;color:var(--ink-soft);">Vedi listone</summary>
+      <table style="margin-top:8px;"><tr><th>Nome</th><th>Base d'asta</th><th>Da rosa di</th></tr>
+      ${list.players.map(p=>`<tr><td>${esc(p.name)}</td><td class="mono">${fmtCredits(p.minBid)}</td><td>${esc(p.owner||'')}</td></tr>`).join('')}
+      </table></details>`:''}
+    ${list.status==='computed' && list.assigned ? `<table style="margin-top:14px;">
+      <tr><th>Utente</th><th>Giocatore</th><th>Prezzo</th></tr>
+      ${Object.entries(list.assigned).flatMap(([u,arr])=>arr.map(a=>`<tr><td>${esc(u)}</td><td>${esc(a.player)}</td><td class="mono">${fmtCredits(a.price)}</td></tr>`)).join('')}
+    </table>`:''}
+  </div>
+  ${resolved.length>0 ? `
+  <div class="panel">
+    <h2>Storico nomine risolte</h2>
+    <table><tr><th>Proprietario</th><th>Giocatore</th><th>Esito</th></tr>
+      ${resolved.map(l=>`<tr><td>${esc(l.username)}</td><td>${esc(l.player)}</td><td>${l.wonBy?`Vinto da ${esc(l.wonBy)} (${fmtCredits(l.finalPrice)})`:'Invenduto, tornato in rosa'}</td></tr>`).join('')}
+    </table>
+  </div>`:''}
+  `;
+}
+
+function renderRosterImportPreview(){
+  const nonAdminUsers = state.users.filter(u=>u.role!=='admin');
+  return `<div class="list-card" style="margin-top:14px;">
+    <h3>Anteprima import (${state.rosterImport.teams.length} squadre trovate nel file)</h3>
+    <table>
+      <tr><th>Nome nel file</th><th>Utente app</th><th>Giocatori</th></tr>
+      ${state.rosterImport.teams.map((t,i)=>`
+        <tr>
+          <td>${esc(t.excelName)}</td>
+          <td><select data-import-map-idx="${i}">
+            <option value="">-- ignora --</option>
+            ${nonAdminUsers.map(u=>`<option value="${esc(u.username)}" ${t.username===u.username?'selected':''}>${esc(u.username)}</option>`).join('')}
+          </select></td>
+          <td>${t.players.length}</td>
+        </tr>`).join('')}
+    </table>
+    <div class="modal-actions" style="justify-content:flex-start;margin-top:14px;">
+      <button class="btn-primary" style="width:auto;" id="btn-confirm-roster-import">Conferma import</button>
+      <button class="btn-secondary" id="btn-cancel-roster-import">Annulla</button>
+    </div>
+  </div>`;
 }
 
 function toLocalInput(iso){
@@ -1252,6 +1356,68 @@ function attachAdminHandlers(){
       showToast('Assegnazione manuale rimossa.');
       render();
     });
+  });
+
+  const rosterImportFile = document.getElementById('roster-import-file');
+  if(rosterImportFile) rosterImportFile.addEventListener('change', async ()=>{
+    const file = rosterImportFile.files[0];
+    if(!file) return;
+    try{
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, {type:'array'});
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const grid = XLSX.utils.sheet_to_json(ws, {header:1, defval:null});
+      const teams = parseRosterGrid(grid);
+      const nonAdminUsers = state.users.filter(u=>u.role!=='admin');
+      teams.forEach(t=>{
+        const guess = nonAdminUsers.find(u=>u.username.toLowerCase()===t.excelName.toLowerCase());
+        t.username = guess ? guess.username : '';
+      });
+      state.rosterImport = {teams};
+      showToast(`${teams.length} squadre trovate nel file.`);
+      render();
+    }catch(e){
+      showToast('File non valido: ' + (e && e.message || e));
+    }
+  });
+
+  document.querySelectorAll('[data-import-map-idx]').forEach(sel=>{
+    sel.addEventListener('change', ()=>{
+      const idx = parseInt(sel.dataset.importMapIdx);
+      state.rosterImport.teams[idx].username = sel.value;
+    });
+  });
+
+  const confirmImportBtn = document.getElementById('btn-confirm-roster-import');
+  if(confirmImportBtn) confirmImportBtn.addEventListener('click', async ()=>{
+    const mapped = state.rosterImport.teams.filter(t=>t.username);
+    if(mapped.length===0){ showToast('Associa almeno una squadra a un utente prima di confermare.'); return; }
+    if(!confirm(`Questo sostituirà la rosa di ${mapped.length} utenti con quella del file. Continuare?`)) return;
+    const newRosters = {...(state.finalRosters||{})};
+    mapped.forEach(t=>{ newRosters[t.username] = t.players.map(p=>({player:p.name, price:p.price})); });
+    state.finalRosters = newRosters;
+    state.finalRostersUpdatedAt = new Date().toISOString();
+    state.rosterImport = null;
+    await persistFinalRosters();
+    showToast('Rose aggiornate importate.');
+    render();
+  });
+  const cancelImportBtn = document.getElementById('btn-cancel-roster-import');
+  if(cancelImportBtn) cancelImportBtn.addEventListener('click', ()=>{ state.rosterImport = null; render(); });
+
+  const addNomBtn = document.getElementById('btn-add-repair-nominations');
+  if(addNomBtn) addNomBtn.addEventListener('click', async ()=>{
+    const added = addPendingNominationsToRepairList();
+    await persistLists();
+    showToast(`${added} nomine aggiunte al listone.`);
+    render();
+  });
+
+  const computeRepairBtn = document.getElementById('btn-compute-repair');
+  if(computeRepairBtn) computeRepairBtn.addEventListener('click', async ()=>{
+    await computeRepairAssignment();
+    showToast('Assegnazione asta di riparazione calcolata.');
+    render();
   });
 
   document.querySelectorAll('[data-players-file]').forEach(inp=>{
@@ -1622,7 +1788,200 @@ async function computeSquadCompletion(){
   await persistUsers();
 }
 
+// ================= ROSE UTENTE =================
+// Ricostruisce la rosa di un utente sommando tutte le fonti "storiche"
+// (liste a ruolo, liste aperte, completamento rose, assegnazioni manuali).
+// Usata SOLO finché non è stata importata una rosa aggiornata da file per
+// quell'utente: se l'admin corregge a mano le assegnazioni fuori da questi
+// meccanismi, questo calcolo smette di essere affidabile ed è preferibile
+// caricare le rose complete aggiornate (vedi importRostersFromGrid).
+function buildComputedRoster(username){
+  const out = [];
+  LISTS_META.forEach(m=>{
+    const list = state.lists[m.id];
+    const a = list && list.assigned && list.assigned[username];
+    if(a && a.player) out.push({player:a.player, price:Number(a.price)||0});
+  });
+  OPEN_LISTS_META.forEach(m=>{
+    const list = state.lists[m.id];
+    if(!list || !list.assigned) return;
+    (list.assigned[username]||[]).forEach(a=>{ out.push({player:a.player, price:Number(a.price)||0}); });
+  });
+  if(state.squadCompletion && state.squadCompletion.assigned){
+    (state.squadCompletion.assigned[username]||[]).forEach(a=>{ out.push({player:a.player, price:Number(a.price)||0}); });
+  }
+  if(state.manualAssignments){
+    (state.manualAssignments[username]||[]).forEach(a=>{ out.push({player:a.player, price:Number(a.price)||0}); });
+  }
+  return out;
+}
+
+// Rosa "corrente" mostrata all'utente: usa la rosa importata da file se
+// presente (fonte di verità), altrimenti quella calcolata; toglie sempre i
+// giocatori che l'utente ha già messo all'asta di riparazione e che non
+// sono ancora stati risolti (venduti o tornati invenduti).
+function getUserRoster(username){
+  const base = (state.finalRosters && state.finalRosters[username])
+    ? state.finalRosters[username].map(p=>({player:p.player, price:Number(p.price)||0}))
+    : buildComputedRoster(username);
+  const listedNow = new Set((state.repairListings||[]).filter(l=>l.username===username && !l.resolved).map(l=>l.player));
+  return base.filter(p=>!listedNow.has(p.player));
+}
+
+// Aggiunge al listone dell'asta di riparazione tutte le nomine degli utenti
+// non ancora risolte e non ancora presenti nel listone corrente. Va lanciata
+// dall'admin prima di aprire un round di offerte.
+function addPendingNominationsToRepairList(){
+  const list = state.lists.REPAIR;
+  const inListNames = new Set(list.players.map(p=>p.name));
+  const toAdd = (state.repairListings||[]).filter(l=>!l.resolved && !inListNames.has(l.player));
+  toAdd.forEach(l=>{
+    list.players.push({name:l.player, minBid:l.minBid, role:l.role||'', owner:l.username, originalPrice:l.price});
+  });
+  return toAdd.length;
+}
+
+// Calcola l'assegnazione dell'asta di riparazione riusando il motore delle
+// liste aperte (vince l'offerta più alta per ciascun giocatore), poi:
+// - scala i crediti al vincitore (come una lista aperta normale)
+// - rimborsa al proprietario originale i crediti che aveva pagato per quel
+//   giocatore
+// - i giocatori del round senza offerte restano "invenduti": tornano
+//   semplicemente disponibili nella rosa di chi li aveva messi all'asta.
+// Ricalcolabile: se richiamata di nuovo, prima annulla tutto quanto fatto
+// dal calcolo precedente (crediti e spostamenti in state.finalRosters).
+async function computeRepairAssignment(){
+  const list = state.lists.REPAIR;
+
+  if(list.status==='computed' && list.assigned){
+    // storna il prezzo pagato dai vincitori del calcolo precedente
+    Object.entries(list.assigned).forEach(([u,arr])=>{
+      const usr = state.users.find(x=>x.username===u);
+      if(usr) arr.forEach(a=>{ usr.credits += a.price; });
+    });
+    // storna i rimborsi già dati ai proprietari originali e ripristina lo
+    // stato "non risolto" delle nomine di questo round, così il ricalcolo
+    // riparte da zero
+    list.players.forEach(p=>{
+      if(!p.owner) return;
+      const wasWon = list.assignedPlayers && list.assignedPlayers[p.name];
+      if(wasWon && state.finalRosters){
+        const prevWinner = wasWon.username;
+        if(state.finalRosters[prevWinner]) state.finalRosters[prevWinner] = state.finalRosters[prevWinner].filter(x=>x.player!==p.name);
+        if(!state.finalRosters[p.owner]) state.finalRosters[p.owner] = [];
+        if(!state.finalRosters[p.owner].some(x=>x.player===p.name)) state.finalRosters[p.owner].push({player:p.name, price:p.originalPrice});
+      }
+      if(wasWon){
+        const owner = state.users.find(u=>u.username===p.owner);
+        if(owner) owner.credits -= p.originalPrice;
+      }
+      const listing = state.repairListings.find(l=>l.username===p.owner && l.player===p.name);
+      if(listing){ listing.resolved=false; listing.wonBy=null; listing.finalPrice=null; listing.returnedUnsold=false; }
+    });
+  }
+
+  const winners = buildOpenAssignmentPreview('REPAIR');
+  const perUser = {};
+  Object.entries(winners).forEach(([player,a])=>{
+    const plObj = list.players.find(p=>p.name===player);
+    (perUser[a.username] = perUser[a.username]||[]).push({player, price:a.price, role: plObj?plObj.role:null});
+    const usr = state.users.find(x=>x.username===a.username);
+    if(usr) usr.credits -= a.price;
+    if(plObj && plObj.owner){
+      const owner = state.users.find(u=>u.username===plObj.owner);
+      if(owner) owner.credits += plObj.originalPrice; // rimborso di quanto aveva pagato
+      if(state.finalRosters){
+        if(state.finalRosters[plObj.owner]) state.finalRosters[plObj.owner] = state.finalRosters[plObj.owner].filter(x=>x.player!==player);
+        if(!state.finalRosters[a.username]) state.finalRosters[a.username] = [];
+        state.finalRosters[a.username].push({player, price:a.price});
+      }
+      const listing = state.repairListings.find(l=>l.username===plObj.owner && l.player===player);
+      if(listing){ listing.resolved=true; listing.wonBy=a.username; listing.finalPrice=a.price; }
+    }
+  });
+  list.players.forEach(p=>{
+    if(!winners[p.name] && p.owner){
+      const listing = state.repairListings.find(l=>l.username===p.owner && l.player===p.name);
+      if(listing){ listing.resolved=true; listing.returnedUnsold=true; }
+    }
+  });
+
+  list.assigned = perUser;
+  list.assignedPlayers = winners;
+  list.status = 'computed';
+  await Promise.all([persistLists(), persistUsers(), persistRepairListings(), persistFinalRosters()]);
+}
+
+// Legge una griglia (array di array, come restituita da XLSX
+// sheet_to_json({header:1})) nello stesso formato usato dall'export
+// dell'app: per ogni squadra un blocco di 3 colonne (nome, costo, vuota),
+// righe = giocatori, blocco termina alla riga "totale".
+function parseRosterGrid(grid){
+  const header = grid[0] || [];
+  const teams = [];
+  for(let c=0;c<header.length;c+=3){
+    const teamName = header[c];
+    if(teamName==null || String(teamName).trim()==='') continue;
+    const players = [];
+    for(let r=1;r<grid.length;r++){
+      const row = grid[r] || [];
+      const name = row[c];
+      if(name==null || String(name).trim()===''){ continue; }
+      if(String(name).trim().toLowerCase()==='totale') break;
+      const price = parseFloat(row[c+1]);
+      players.push({name:String(name).trim(), price:isNaN(price)?0:price});
+    }
+    teams.push({excelName:String(teamName).trim(), players});
+  }
+  return teams;
+}
+
 // ================= USER =================
+
+function renderRepairNominationPanel(){
+  const me = state.currentUser;
+  const roster = getUserRoster(me);
+  const inRoundNames = new Set(state.lists.REPAIR.players.map(p=>p.name));
+  const myListings = (state.repairListings||[]).filter(l=>l.username===me);
+  const pendingMine = myListings.filter(l=>!l.resolved && !inRoundNames.has(l.player));
+  const inRoundMine = myListings.filter(l=>!l.resolved && inRoundNames.has(l.player));
+  const resolvedMine = myListings.filter(l=>l.resolved).sort((a,b)=> new Date(b.addedAt)-new Date(a.addedAt)).slice(0,15);
+  return `
+  <div class="panel">
+    <h2>La tua rosa — Asta di riparazione</h2>
+    <p class="desc">Metti all'asta un tuo giocatore per l'asta di riparazione: esce subito dalla tua rosa. Se qualcuno lo vince, ti vengono restituiti i crediti che avevi pagato per lui; se resta invenduto, torna semplicemente nella tua rosa.</p>
+    ${roster.length===0 ? '<p class="empty-note">Nessun giocatore in rosa al momento.</p>' : `
+    <table>
+      <tr><th>Giocatore</th><th>Prezzo pagato</th><th>Base d'asta</th><th></th></tr>
+      ${roster.map((p,i)=>`
+        <tr>
+          <td>${esc(p.player)}</td>
+          <td class="mono">${fmtCredits(p.price)}</td>
+          <td style="max-width:110px;"><input type="number" min="0" value="${p.price}" data-nominate-min-idx="${i}" style="width:90px;padding:5px 8px;border:1px solid var(--line);border-radius:4px;"></td>
+          <td><button class="btn-small" data-nominate-idx="${i}">Metti all'asta</button></td>
+        </tr>`).join('')}
+    </table>`}
+    ${pendingMine.length>0 ? `
+    <h3 style="margin-top:16px;">Le tue nomine in attesa</h3>
+    <table>
+      <tr><th>Giocatore</th><th>Base d'asta</th><th></th></tr>
+      ${pendingMine.map(l=>`<tr><td>${esc(l.player)}</td><td class="mono">${fmtCredits(l.minBid)}</td><td><button class="btn-small" data-cancel-nomination="${esc(l.id)}">Ritira</button></td></tr>`).join('')}
+    </table>` : ''}
+    ${inRoundMine.length>0 ? `
+    <h3 style="margin-top:16px;">Già nel listone del round in corso</h3>
+    <table>
+      <tr><th>Giocatore</th><th>Base d'asta</th></tr>
+      ${inRoundMine.map(l=>`<tr><td>${esc(l.player)}</td><td class="mono">${fmtCredits(l.minBid)}</td></tr>`).join('')}
+    </table>` : ''}
+    ${resolvedMine.length>0 ? `
+    <h3 style="margin-top:16px;">Esiti recenti</h3>
+    <table>
+      <tr><th>Giocatore</th><th>Esito</th></tr>
+      ${resolvedMine.map(l=>`<tr><td>${esc(l.player)}</td><td>${l.wonBy?`Vinto da ${esc(l.wonBy)} (${fmtCredits(l.finalPrice)})`:'Invenduto, tornato in rosa'}</td></tr>`).join('')}
+    </table>` : ''}
+  </div>`;
+}
+
 function renderUser(){
   const rows = [0,1,2,3];
   return `
@@ -1632,9 +1991,11 @@ function renderUser(){
     <div class="pitch-wrap">
       <div class="formation">
         ${rows.map(r=>`<div class="form-row">${LISTS_META.filter(m=>m.row===r).map(m=>renderTile(m)).join('')}</div>`).join('')}
-        <div class="form-row">${OPEN_LISTS_META.map(m=>renderTile(m)).join('')}</div>
+        <div class="form-row">${OPEN_LISTS_META.filter(m=>m.id!=='REPAIR').map(m=>renderTile(m)).join('')}</div>
+        <div class="form-row">${OPEN_LISTS_META.filter(m=>m.id==='REPAIR').map(m=>renderTile(m)).join('')}</div>
       </div>
     </div>
+    ${renderRepairNominationPanel()}
   </div>
   ${state.openListId ? (OPEN_LISTS_META.some(m=>m.id===state.openListId) ? renderOpenPrefModal(state.openListId) : renderPrefModal(state.openListId)) : ''}
   ${state.toast?`<div class="toast">${esc(state.toast)}</div>`:''}
@@ -1804,6 +2165,38 @@ function attachUserHandlers(){
   } else {
     attachModalHandlers();
   }
+  attachRepairNominationHandlers();
+}
+
+function attachRepairNominationHandlers(){
+  document.querySelectorAll('[data-nominate-idx]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const idx = parseInt(btn.dataset.nominateIdx);
+      const roster = getUserRoster(state.currentUser);
+      const entry = roster[idx];
+      if(!entry) return;
+      const minInput = document.querySelector(`[data-nominate-min-idx="${idx}"]`);
+      const minBid = parseFloat(minInput.value);
+      if(isNaN(minBid) || minBid<0){ showToast("Base d'asta non valida."); return; }
+      if(!confirm(`Mettere ${entry.player} all'asta di riparazione? Esce subito dalla tua rosa.`)) return;
+      state.repairListings.push({
+        id: uid(), username: state.currentUser, player: entry.player, price: entry.price,
+        minBid, role:'', addedAt: new Date().toISOString(), resolved:false, wonBy:null, finalPrice:null, returnedUnsold:false
+      });
+      await persistRepairListings();
+      showToast('Giocatore messo all\'asta di riparazione.');
+      render();
+    });
+  });
+  document.querySelectorAll('[data-cancel-nomination]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const id = btn.dataset.cancelNomination;
+      state.repairListings = state.repairListings.filter(l=>l.id!==id);
+      await persistRepairListings();
+      showToast('Nomina ritirata.');
+      render();
+    });
+  });
 }
 
 function attachModalHandlers(){
@@ -2041,4 +2434,6 @@ loadAll();
 </script>
 </body>
 </html>
+
+
 
