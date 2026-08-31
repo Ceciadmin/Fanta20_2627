@@ -116,40 +116,46 @@ tr:last-child td{border-bottom:none;}
 .tile .status-line.done{color:var(--gold);font-family:'Inter',sans-serif;font-size:12px;text-transform:uppercase;font-weight:700;}
 .tile .assigned-player{font-size:11px;color:var(--ink-soft);margin-top:4px;}
 
-/* Panchina: prosecuzione del campo, dove si svincolano i giocatori */
-.bench-wrap{background:linear-gradient(180deg, #0D2419 0%, #081810 100%);border-radius:0 0 8px 8px;padding:18px 18px 22px;position:relative;box-shadow:inset 0 10px 16px -12px rgba(0,0,0,0.6);}
-.bench-wrap.standalone{border-radius:8px;}
-.bench-wrap:before{content:'';position:absolute;top:0;left:18px;right:18px;height:1px;background:rgba(201,147,47,0.32);}
+/* Panchina: rastrelliera di ganci in stile spogliatoio, sfondo chiaro */
+.bench-wrap{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:0 20px 22px;position:relative;}
+.bench-rail{height:12px;margin:0 -20px 30px;border-radius:9px 9px 0 0;background:
+    repeating-radial-gradient(circle at 22px 6px, #6B4423 0 3px, transparent 3px 44px),
+    linear-gradient(180deg, #C89860 0%, #A87847 100%);
+  box-shadow:0 3px 6px rgba(0,0,0,0.12);
+}
 .bench-head{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:3px;}
-.bench-head h3{margin:0;color:var(--gold-l);font-family:'Oswald',sans-serif;text-transform:uppercase;letter-spacing:0.05em;font-size:15px;}
-.bench-count{font-family:'Roboto Mono',monospace;font-size:12px;color:var(--gold-l);opacity:0.85;white-space:nowrap;}
-.bench-count.full{color:#F0B4A6;}
-.bench-desc{color:rgba(243,227,194,0.62);font-size:12.5px;line-height:1.55;margin:0 0 16px;max-width:640px;}
-.bench-grid{display:flex;flex-wrap:wrap;gap:10px;}
-.bench-card{background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.09);border-radius:6px;padding:12px;width:184px;display:flex;flex-direction:column;gap:8px;}
-.bench-card.is-off{opacity:0.42;}
+.bench-head h3{margin:0;color:var(--pitch);font-family:'Oswald',sans-serif;text-transform:uppercase;letter-spacing:0.05em;font-size:15px;}
+.bench-count{font-family:'Roboto Mono',monospace;font-size:12px;font-weight:700;color:#5c4413;background:var(--gold-l);border-radius:20px;padding:3px 11px;white-space:nowrap;}
+.bench-count.full{color:#7a2718;background:var(--coral-l);}
+.bench-desc{color:var(--ink-soft);font-size:12.5px;line-height:1.55;margin:0 0 30px;max-width:640px;}
+.bench-grid{display:flex;flex-wrap:wrap;gap:26px 16px;}
+.bench-card{position:relative;background:#fff;border:1px solid var(--line);border-radius:6px;padding:14px 12px 12px;width:180px;display:flex;flex-direction:column;gap:9px;box-shadow:0 4px 10px rgba(15,20,17,0.06);}
+.bench-card:before{content:'';position:absolute;top:-19px;left:50%;transform:translateX(-50%);width:2px;height:19px;background:#B98B54;}
+.bench-card:after{content:'';position:absolute;top:-25px;left:50%;transform:translateX(-50%);width:10px;height:10px;border-radius:50%;background:#8B5E34;border:2px solid #6B4423;}
+.bench-card.is-off{opacity:0.5;}
 .bench-card-top{display:flex;align-items:center;gap:8px;}
 .role-chip{width:24px;height:24px;flex:0 0 24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:'Roboto Mono',monospace;font-weight:700;font-size:11px;}
 .role-chip.role-P{background:#4B5FA6;color:#fff;}
 .role-chip.role-D{background:#2E7D4F;color:#fff;}
 .role-chip.role-C{background:var(--gold);color:#25200f;}
 .role-chip.role-A{background:var(--coral);color:#fff;}
-.role-chip.role-{background:rgba(255,255,255,0.15);color:#fff;}
-.bench-card-name{color:#fff;font-size:13px;font-weight:600;line-height:1.25;}
-.bench-card-price{font-family:'Roboto Mono',monospace;font-size:11px;color:rgba(243,227,194,0.55);margin-top:-4px;}
-.bench-card .bc-field label{display:block;font-size:10px;color:rgba(243,227,194,0.5);text-transform:uppercase;letter-spacing:0.03em;margin-bottom:3px;}
-.bench-card input, .bench-card select{width:100%;padding:6px 8px;border:1px solid rgba(255,255,255,0.14);border-radius:4px;font-size:12px;background:rgba(255,255,255,0.94);}
+.role-chip.role-{background:var(--line);color:var(--ink-soft);}
+.bench-card-name{color:var(--ink);font-size:13px;font-weight:600;line-height:1.25;}
+.bench-card .bc-field label{display:block;font-size:10px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:0.03em;margin-bottom:3px;}
+.bc-locked{display:flex;align-items:baseline;gap:6px;font-family:'Roboto Mono',monospace;font-size:14px;font-weight:700;color:var(--pitch);background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:6px 8px;}
+.bc-locked .bc-locked-tag{font-family:'Inter',sans-serif;font-size:10px;font-weight:600;color:var(--ink-soft);text-transform:uppercase;letter-spacing:0.02em;}
+.bench-card select{width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:4px;font-size:12px;background:#fff;color:var(--ink);}
 .bench-card-btn{width:100%;background:var(--coral);color:#fff;border:none;padding:8px;border-radius:4px;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.03em;}
 .bench-card-btn:hover:not(:disabled){background:#9c3626;}
-.bench-card-btn:disabled{background:rgba(255,255,255,0.1);color:rgba(255,255,255,0.35);cursor:not-allowed;}
-.bench-empty{color:rgba(243,227,194,0.55);font-size:13px;font-style:italic;padding:8px 0 4px;}
-.bench-sub{margin-top:18px;padding-top:14px;border-top:1px solid rgba(255,255,255,0.08);}
-.bench-sub h4{margin:0 0 8px;color:var(--gold-l);font-family:'Oswald',sans-serif;text-transform:uppercase;font-size:12px;letter-spacing:0.05em;}
-.bench-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid rgba(255,255,255,0.06);font-size:12.5px;color:rgba(255,255,255,0.88);}
+.bench-card-btn:disabled{background:var(--line);color:var(--ink-soft);cursor:not-allowed;}
+.bench-empty{color:var(--ink-soft);font-size:13px;font-style:italic;padding:8px 0 4px;}
+.bench-sub{margin-top:22px;padding-top:14px;border-top:1px solid var(--line);}
+.bench-sub h4{margin:0 0 8px;color:var(--pitch);font-family:'Oswald',sans-serif;text-transform:uppercase;font-size:12px;letter-spacing:0.05em;}
+.bench-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line);font-size:12.5px;color:var(--ink);}
 .bench-row:last-child{border-bottom:none;}
-.bench-row .brow-meta{font-family:'Roboto Mono',monospace;font-size:11.5px;color:rgba(243,227,194,0.6);white-space:nowrap;}
-.bench-row .brow-outcome{font-size:11.5px;color:rgba(243,227,194,0.75);text-align:right;}
-.bench-row .brow-outcome.won{color:#8FD6AC;}
+.bench-row .brow-meta{font-family:'Roboto Mono',monospace;font-size:11.5px;color:var(--ink-soft);white-space:nowrap;}
+.bench-row .brow-outcome{font-size:11.5px;color:var(--ink-soft);text-align:right;}
+.bench-row .brow-outcome.won{color:var(--ok);}
 .bench-row button{background:transparent;border:1px solid rgba(255,255,255,0.25);color:rgba(255,255,255,0.85);padding:4px 11px;border-radius:4px;font-size:11px;flex:0 0 auto;}
 .bench-row button:hover{background:rgba(255,255,255,0.1);}
 @media (max-width:520px){.bench-card{width:100%;}}
@@ -2053,7 +2059,7 @@ function benchActiveCount(username){
   return (state.repairListings||[]).filter(l=>l.username===username && !l.resolved).length;
 }
 
-function renderRepairNominationPanel(standalone){
+function renderRepairNominationPanel(){
   const me = state.currentUser;
   const roster = getUserRoster(me);
   const inRoundNames = new Set(state.lists.REPAIR.players.map(p=>p.name));
@@ -2066,12 +2072,13 @@ function renderRepairNominationPanel(standalone){
   const roleShort = {P:'POR', D:'DIF', C:'CEN', A:'ATT'};
 
   return `
-  <div class="bench-wrap ${standalone?'standalone':''}">
+  <div class="bench-wrap">
+    <div class="bench-rail"></div>
     <div class="bench-head">
       <h3>Panchina — svincoli</h3>
       <span class="bench-count ${limitReached?'full':''}">${activeCount} / ${REPAIR_NOMINATION_LIMIT} usati</span>
     </div>
-    <p class="bench-desc">Manda un giocatore in panchina per metterlo all'asta di riparazione: esce subito dalla rosa e i crediti pagati tornano subito a te. Se qualcuno lo prende in asta va a lui, altrimenti resta svincolato e potrà finire a un'altra squadra con il completamento rose. Non torna più nella tua rosa.</p>
+    <p class="bench-desc">Manda un giocatore in panchina per metterlo all'asta di riparazione: esce subito dalla rosa e i crediti che avevi pagato tornano subito a te, come base d'asta fissa. Se qualcuno lo prende in asta va a lui, altrimenti resta svincolato e potrà finire a un'altra squadra con il completamento rose. Non torna più nella tua rosa.</p>
     ${roster.length===0 ? '<p class="bench-empty">Nessun giocatore in rosa al momento.</p>' : `
     <div class="bench-grid">
       ${roster.map((p,i)=>`
@@ -2080,10 +2087,9 @@ function renderRepairNominationPanel(standalone){
             <span class="role-chip role-${esc(p.role||'')}">${roleShort[p.role]||'?'}</span>
             <span class="bench-card-name">${esc(p.player)}</span>
           </div>
-          <div class="bench-card-price">Pagato ${fmtCredits(p.price)}</div>
           <div class="bc-field">
             <label>Base d'asta</label>
-            <input type="number" min="0" value="${p.price}" data-nominate-min-idx="${i}" ${limitReached?'disabled':''}>
+            <div class="bc-locked"><span>${fmtCredits(p.price)}</span><span class="bc-locked-tag">fissa</span></div>
           </div>
           <div class="bc-field">
             <label>Ruolo</label>
@@ -2148,7 +2154,7 @@ function renderUser(){
         <div class="form-row">${OPEN_LISTS_META.filter(m=>m.id!=='REPAIR').map(m=>renderTile(m)).join('')}</div>
         <div class="form-row">${OPEN_LISTS_META.filter(m=>m.id==='REPAIR').map(m=>renderTile(m)).join('')}</div>
       </div>
-    </div>` : renderRepairNominationPanel(true)}
+    </div>` : renderRepairNominationPanel()}
   </div>
   ${state.openListId ? (OPEN_LISTS_META.some(m=>m.id===state.openListId) ? renderOpenPrefModal(state.openListId) : renderPrefModal(state.openListId)) : ''}
   ${state.toast?`<div class="toast">${esc(state.toast)}</div>`:''}
@@ -2339,9 +2345,7 @@ function attachRepairNominationHandlers(){
         showToast(`Hai raggiunto il limite massimo di ${REPAIR_NOMINATION_LIMIT} svincoli.`);
         return;
       }
-      const minInput = document.querySelector(`[data-nominate-min-idx="${idx}"]`);
-      const minBid = parseFloat(minInput.value);
-      if(isNaN(minBid) || minBid<0){ showToast("Base d'asta non valida."); return; }
+      const minBid = entry.price;
       const roleSelect = document.querySelector(`[data-nominate-role-idx="${idx}"]`);
       const role = roleSelect ? roleSelect.value : '';
       if(!role){ showToast('Seleziona il ruolo del giocatore.'); return; }
