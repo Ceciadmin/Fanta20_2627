@@ -180,6 +180,11 @@ const OPEN_LISTS_META = [
 ];
 
 const ROLE_QUOTA = {D:8, C:8, A:4};
+// Numero massimo di giocatori che ogni utente può mettere all'asta di
+// riparazione (svincolare) senza che siano ancora stati risolti (in attesa
+// o già nel listone del round in corso). Una volta risolta una nomina
+// (venduta o svincolata definitivamente) non conta più nel limite.
+const REPAIR_NOMINATION_LIMIT = 6;
 const ROLE_LABEL = {D:'Difensore', C:'Centrocampista', A:'Attaccante', P:'Portiere'};
 // Mappa lista a ruolo fisso -> ruolo, per contare quanti D/C/A ha già ciascun utente
 const LIST_ROLE = {GK:'P', DEF1:'D', DEF2:'D', DEF3:'D', MID1:'C', MID2:'C', MID3:'C', FWD1:'A', FWD2:'A'};
@@ -2011,10 +2016,13 @@ function renderRepairNominationPanel(){
   const pendingMine = myListings.filter(l=>!l.resolved && !inRoundNames.has(l.player));
   const inRoundMine = myListings.filter(l=>!l.resolved && inRoundNames.has(l.player));
   const resolvedMine = myListings.filter(l=>l.resolved).sort((a,b)=> new Date(b.addedAt)-new Date(a.addedAt)).slice(0,15);
+  const activeCount = pendingMine.length + inRoundMine.length;
+  const limitReached = activeCount >= REPAIR_NOMINATION_LIMIT;
   return `
   <div class="panel">
     <h2>La tua rosa — Asta di riparazione</h2>
-    <p class="desc">Metti all'asta un tuo giocatore per l'asta di riparazione: esce subito dalla tua rosa e i crediti che avevi pagato per lui ti vengono restituiti subito. Se qualcuno lo vince nell'asta di riparazione, va a lui; se resta invenduto diventa uno svincolato e potrà comunque essere assegnato a un'altra squadra con il completamento rose che l'admin fa dopo l'asta di riparazione. In ogni caso non torna più nella tua rosa.</p>
+    <p class="desc">Metti all'asta un tuo giocatore per l'asta di riparazione: esce subito dalla tua rosa e i crediti che avevi pagato per lui ti vengono restituiti subito. Se qualcuno lo vince nell'asta di riparazione, va a lui; se resta invenduto diventa uno svincolato e potrà comunque essere assegnato a un'altra squadra con il completamento rose che l'admin fa dopo l'asta di riparazione. In ogni caso non torna più nella tua rosa. Puoi svincolare al massimo ${REPAIR_NOMINATION_LIMIT} giocatori.</p>
+    <div class="hint" style="margin-bottom:14px;">Svincoli usati: <strong class="mono">${activeCount} / ${REPAIR_NOMINATION_LIMIT}</strong>${limitReached ? ' — hai raggiunto il limite massimo, ritira una nomina in attesa per poterne aggiungere un\'altra.' : ''}</div>
     ${roster.length===0 ? '<p class="empty-note">Nessun giocatore in rosa al momento.</p>' : `
     <table>
       <tr><th>Giocatore</th><th>Prezzo pagato</th><th>Base d'asta</th><th>Ruolo</th><th></th></tr>
@@ -2022,9 +2030,9 @@ function renderRepairNominationPanel(){
         <tr>
           <td>${esc(p.player)}</td>
           <td class="mono">${fmtCredits(p.price)}</td>
-          <td style="max-width:110px;"><input type="number" min="0" value="${p.price}" data-nominate-min-idx="${i}" style="width:90px;padding:5px 8px;border:1px solid var(--line);border-radius:4px;"></td>
+          <td style="max-width:110px;"><input type="number" min="0" value="${p.price}" data-nominate-min-idx="${i}" style="width:90px;padding:5px 8px;border:1px solid var(--line);border-radius:4px;" ${limitReached?'disabled':''}></td>
           <td style="max-width:130px;">
-            <select data-nominate-role-idx="${i}" style="padding:5px 8px;border:1px solid var(--line);border-radius:4px;">
+            <select data-nominate-role-idx="${i}" style="padding:5px 8px;border:1px solid var(--line);border-radius:4px;" ${limitReached?'disabled':''}>
               <option value="">-- seleziona --</option>
               <option value="P" ${p.role==='P'?'selected':''}>Portiere</option>
               <option value="D" ${p.role==='D'?'selected':''}>Difensore</option>
@@ -2032,7 +2040,7 @@ function renderRepairNominationPanel(){
               <option value="A" ${p.role==='A'?'selected':''}>Attaccante</option>
             </select>
           </td>
-          <td><button class="btn-small" data-nominate-idx="${i}">Metti all'asta</button></td>
+          <td><button class="btn-small" data-nominate-idx="${i}" ${limitReached?'disabled title="Limite di '+REPAIR_NOMINATION_LIMIT+' svincoli raggiunto"':''}>Metti all'asta</button></td>
         </tr>`).join('')}
     </table>`}
     ${pendingMine.length>0 ? `
@@ -2249,6 +2257,11 @@ function attachRepairNominationHandlers(){
       const roster = getUserRoster(state.currentUser);
       const entry = roster[idx];
       if(!entry) return;
+      const activeCount = (state.repairListings||[]).filter(l=>l.username===state.currentUser && !l.resolved).length;
+      if(activeCount >= REPAIR_NOMINATION_LIMIT){
+        showToast(`Hai raggiunto il limite massimo di ${REPAIR_NOMINATION_LIMIT} svincoli.`);
+        return;
+      }
       const minInput = document.querySelector(`[data-nominate-min-idx="${idx}"]`);
       const minBid = parseFloat(minInput.value);
       if(isNaN(minBid) || minBid<0){ showToast("Base d'asta non valida."); return; }
@@ -2522,3 +2535,4 @@ loadAll();
 </script>
 </body>
 </html>
+
