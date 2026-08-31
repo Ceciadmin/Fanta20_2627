@@ -64,6 +64,7 @@ input,select{font-family:'Inter',sans-serif;}
 .tabs{display:flex;gap:4px;border-bottom:2px solid var(--line);margin-bottom:24px;flex-wrap:wrap;}
 .tab-btn{background:transparent;border:none;padding:10px 16px;font-weight:600;font-size:13px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:0.03em;border-bottom:3px solid transparent;margin-bottom:-2px;}
 .tab-btn.active{color:var(--pitch);border-bottom-color:var(--gold);}
+.tab-btn .tab-count{display:inline-flex;align-items:center;justify-content:center;min-width:17px;height:17px;padding:0 4px;margin-left:6px;border-radius:9px;background:var(--gold);color:#3a2a08;font-size:10px;font-weight:700;font-family:'Roboto Mono',monospace;vertical-align:2px;}
 
 .admin-layout{display:flex;align-items:flex-start;gap:24px;}
 .admin-sidebar{display:flex;flex-direction:column;gap:3px;flex:0 0 230px;background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:10px;position:sticky;top:16px;}
@@ -97,6 +98,7 @@ tr:last-child td{border-bottom:none;}
 .list-card .players-count{font-size:12px;color:var(--ink-soft);font-weight:400;text-transform:none;}
 
 .pitch-wrap{background:linear-gradient(180deg, var(--pitch) 0%, var(--pitch2) 100%);border-radius:8px 8px 0 0;padding:30px 16px 16px;position:relative;overflow:hidden;}
+.pitch-wrap.standalone{border-radius:8px;}
 .pitch-wrap:before{content:'';position:absolute;inset:0;background:repeating-linear-gradient(180deg, rgba(255,255,255,0.03) 0 40px, transparent 40px 80px);pointer-events:none;}
 .formation{display:flex;flex-direction:column;gap:18px;position:relative;}
 .form-row{display:flex;justify-content:center;gap:14px;flex-wrap:wrap;}
@@ -116,6 +118,7 @@ tr:last-child td{border-bottom:none;}
 
 /* Panchina: prosecuzione del campo, dove si svincolano i giocatori */
 .bench-wrap{background:linear-gradient(180deg, #0D2419 0%, #081810 100%);border-radius:0 0 8px 8px;padding:18px 18px 22px;position:relative;box-shadow:inset 0 10px 16px -12px rgba(0,0,0,0.6);}
+.bench-wrap.standalone{border-radius:8px;}
 .bench-wrap:before{content:'';position:absolute;top:0;left:18px;right:18px;height:1px;background:rgba(201,147,47,0.32);}
 .bench-head{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:3px;}
 .bench-head h3{margin:0;color:var(--gold-l);font-family:'Oswald',sans-serif;text-transform:uppercase;letter-spacing:0.05em;font-size:15px;}
@@ -238,6 +241,7 @@ let state = {
   loginError: '',
   loginAdminMode: false,
   openListId: null,
+  userTab: 'campo', // 'campo' (formazione/liste) o 'panchina' (svincoli asta di riparazione)
   prefDraft: null,
   prefErrors: {},
   toast: null,
@@ -2045,7 +2049,11 @@ function parseRosterGrid(grid){
 
 // ================= USER =================
 
-function renderRepairNominationPanel(){
+function benchActiveCount(username){
+  return (state.repairListings||[]).filter(l=>l.username===username && !l.resolved).length;
+}
+
+function renderRepairNominationPanel(standalone){
   const me = state.currentUser;
   const roster = getUserRoster(me);
   const inRoundNames = new Set(state.lists.REPAIR.players.map(p=>p.name));
@@ -2058,7 +2066,7 @@ function renderRepairNominationPanel(){
   const roleShort = {P:'POR', D:'DIF', C:'CEN', A:'ATT'};
 
   return `
-  <div class="bench-wrap">
+  <div class="bench-wrap ${standalone?'standalone':''}">
     <div class="bench-head">
       <h3>Panchina — svincoli</h3>
       <span class="bench-count ${limitReached?'full':''}">${activeCount} / ${REPAIR_NOMINATION_LIMIT} usati</span>
@@ -2123,18 +2131,24 @@ function renderRepairNominationPanel(){
 
 function renderUser(){
   const rows = [0,1,2,3];
+  const tab = state.userTab || 'campo';
+  const benchCount = benchActiveCount(state.currentUser);
   return `
   ${renderTopbar()}
   <div class="wrap">
     ${renderAnomalyBanner(false)}
-    <div class="pitch-wrap">
+    <div class="tabs">
+      <button class="tab-btn ${tab==='campo'?'active':''}" data-user-tab="campo">Campo</button>
+      <button class="tab-btn ${tab==='panchina'?'active':''}" data-user-tab="panchina">Panchina${benchCount>0?`<span class="tab-count">${benchCount}</span>`:''}</button>
+    </div>
+    ${tab==='campo' ? `
+    <div class="pitch-wrap standalone">
       <div class="formation">
         ${rows.map(r=>`<div class="form-row">${LISTS_META.filter(m=>m.row===r).map(m=>renderTile(m)).join('')}</div>`).join('')}
         <div class="form-row">${OPEN_LISTS_META.filter(m=>m.id!=='REPAIR').map(m=>renderTile(m)).join('')}</div>
         <div class="form-row">${OPEN_LISTS_META.filter(m=>m.id==='REPAIR').map(m=>renderTile(m)).join('')}</div>
       </div>
-    </div>
-    ${renderRepairNominationPanel()}
+    </div>` : renderRepairNominationPanel(true)}
   </div>
   ${state.openListId ? (OPEN_LISTS_META.some(m=>m.id===state.openListId) ? renderOpenPrefModal(state.openListId) : renderPrefModal(state.openListId)) : ''}
   ${state.toast?`<div class="toast">${esc(state.toast)}</div>`:''}
@@ -2287,6 +2301,12 @@ function renderOpenPrefModal(listId){
 }
 
 function attachUserHandlers(){
+  document.querySelectorAll('[data-user-tab]').forEach(t=>{
+    t.addEventListener('click', ()=>{
+      state.userTab = t.dataset.userTab;
+      render();
+    });
+  });
   document.querySelectorAll('[data-open-tile]').forEach(t=>{
     const openIt = ()=>{
       if(t.dataset.clickable !== 'true') return;
