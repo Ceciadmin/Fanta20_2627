@@ -241,7 +241,7 @@ let state = {
   view: 'login',
   adminTab: 'utenti',
   users: [],
-  config: {initialCredits: 500},
+  config: {initialCredits: 500, repairWindow:{openAt:null, closeAt:null}},
   lists: {},
   submissions: {},
   loginError: '',
@@ -367,7 +367,7 @@ function exportPreferencesCSV(){
 }
 
 const DEFAULT_USERS = [{username:'admin', password:'admin', role:'admin', credits:0}];
-const DEFAULT_CONFIG = {initialCredits:500};
+const DEFAULT_CONFIG = {initialCredits:500, repairWindow:{openAt:null, closeAt:null}};
 const loadedDocs = new Set();
 const BACKUP_COLLECTION = 'fantacalcio_backups';
 const BACKUP_THROTTLE_MS = 2*60*1000; // massimo un backup automatico ogni 2 minuti
@@ -455,13 +455,22 @@ async function restoreFromBackupDoc(id){
 
 function applyBackupData(data){
   state.users = (data && data.users) || DEFAULT_USERS;
-  state.config = (data && data.config) || DEFAULT_CONFIG;
+  state.config = normalizeConfig((data && data.config) || DEFAULT_CONFIG);
   state.lists = (data && data.lists) || defaultLists();
   state.submissions = (data && data.submissions) || {};
   state.squadCompletion = (data && data.squadCompletion) || null;
   state.manualAssignments = (data && data.manualAssignments) || {};
   state.finalRosters = (data && data.finalRosters) || null;
   state.repairListings = (data && data.repairListings) || [];
+}
+
+// Garantisce che state.config abbia sempre tutti i campi attesi, anche se
+// il documento salvato su Firestore è stato creato prima dell'introduzione
+// di un nuovo campo (es. repairWindow).
+function normalizeConfig(cfg){
+  const c = cfg || {};
+  if(!c.repairWindow) c.repairWindow = {openAt:null, closeAt:null};
+  return c;
 }
 
 async function persistAllDocs(){
@@ -516,7 +525,7 @@ async function loadAll(){
   }
 
   handleDoc('users', v=>{ state.users = v; }, DEFAULT_USERS, 'users');
-  handleDoc('config', v=>{ state.config = v; }, DEFAULT_CONFIG, 'config');
+  handleDoc('config', v=>{ state.config = normalizeConfig(v); }, DEFAULT_CONFIG, 'config');
   handleDoc('submissions', v=>{ state.submissions = v; }, {}, 'submissions');
   handleDoc('squadCompletion', v=>{ state.squadCompletion = v; }, null, 'squadCompletion');
   handleDoc('manualAssignments', v=>{ state.manualAssignments = v; }, {}, 'manualAssignments');
@@ -1005,7 +1014,39 @@ function renderAdminRiparazione(){
   const badgeText = st==='open'?'Aperta':st==='closed'?'Chiusa':st==='computed'?'Assegnata':'Da configurare';
   const pending = (state.repairListings||[]).filter(l=>!l.resolved && !list.players.some(p=>p.name===l.player));
   const resolved = (state.repairListings||[]).filter(l=>l.resolved).sort((a,b)=> new Date(b.addedAt)-new Date(a.addedAt)).slice(0,30);
+  const win = (state.config && state.config.repairWindow) || {openAt:null, closeAt:null};
+  const winSt = timeWindowStatus(win);
+  const winBadgeClass = winSt==='open'?'badge-open':winSt==='closed'?'badge-closed':'badge-setup';
+  const winBadgeText = winSt==='open'?'Aperta':winSt==='closed'?'Chiusa':'Da configurare';
   return `
+  <div class="panel">
+    <h2>Finestra per gli svincoli <span class="badge ${winBadgeClass}" style="margin-left:8px;">${winBadgeText}</span></h2>
+    <p class="desc">Il pulsante "Svincola" (in Panchina) è visibile agli utenti solo durante questa finestra: fuori da questi orari nessuno può mettere giocatori all'asta di riparazione. Non riguarda invece la finestra di offerta del listone qui sotto, che resta impostata separatamente.</p>
+    <div class="row-flex">
+      <div class="field">
+        <label>Apertura</label>
+        <input type="datetime-local" id="repairwin-open" value="${win.openAt?toLocalInput(win.openAt):''}">
+      </div>
+      <div class="field">
+        <label>Chiusura</label>
+        <input type="datetime-local" id="repairwin-close" value="${win.closeAt?toLocalInput(win.closeAt):''}">
+      </div>
+      <button class="btn-secondary" id="btn-save-repairwin">Salva orari</button>
+    </div>
+    <div class="row-flex" style="margin-top:8px;">
+      <div class="field" style="max-width:140px;">
+        <label>Apri per (min)</label>
+        <input type="number" min="1" value="60" id="repairwin-quick-min">
+      </div>
+      <button class="btn-secondary" id="btn-quick-open-repairwin">Apri ora</button>
+      <button class="btn-small" id="btn-close-now-repairwin">Chiudi ora</button>
+    </div>
+  </div>
+  <div class="panel">
+    <h2>Carica svincolati esterni (nuovi arrivi Serie A)</h2>
+    <p class="desc">Carica un file .txt con giocatori da aggiungere al listone dell'asta di riparazione anche se non arrivano dalla panchina di nessun utente (es. nuovi tesseramenti in Serie A prima dell'asta). Formato <span class="mono">NomeGiocatore;OffertaMinima;Ruolo</span> (Ruolo: P, D, C o A), una riga per giocatore. I giocatori già presenti nel listone (per nome) vengono ignorati.</p>
+    <input type="file" accept=".txt" id="repair-external-file">
+  </div>
   <div class="panel">
     <h2>Importa rose complete aggiornate</h2>
     <p class="desc">Carica un file Excel nello stesso formato dell'export dell'app (un blocco di 3 colonne per squadra: nome, costo, vuota — righe = giocatori, terminate da "totale"). Diventa la nuova fonte di verità per la rosa di ciascun utente, al posto di quella calcolata automaticamente dalle liste: usalo se hai corretto a mano le assegnazioni durante il completamento rose.</p>
@@ -1111,6 +1152,22 @@ function listStatus(list){
     if(now >= c) return 'closed';
   }
   return 'setup';
+}
+
+// Stato di una generica finestra temporale {openAt, closeAt} (usata per la
+// finestra in cui gli utenti possono svincolare giocatori all'asta di
+// riparazione). 'setup' = non ancora configurata o non ancora iniziata.
+function timeWindowStatus(win){
+  if(!win || !win.openAt || !win.closeAt) return 'setup';
+  const now = Date.now();
+  const o = new Date(win.openAt).getTime(), c = new Date(win.closeAt).getTime();
+  if(now < o) return 'setup';
+  if(now >= o && now < c) return 'open';
+  return 'closed';
+}
+
+function isRepairWindowOpen(){
+  return timeWindowStatus(state.config && state.config.repairWindow) === 'open';
 }
 
 function renderAdminCrediti(){
@@ -1481,6 +1538,64 @@ function attachAdminHandlers(){
   });
   const cancelImportBtn = document.getElementById('btn-cancel-roster-import');
   if(cancelImportBtn) cancelImportBtn.addEventListener('click', ()=>{ state.rosterImport = null; render(); });
+
+  const repairExternalFile = document.getElementById('repair-external-file');
+  if(repairExternalFile) repairExternalFile.addEventListener('change', async ()=>{
+    const file = repairExternalFile.files[0];
+    if(!file) return;
+    const text = await file.text();
+    const lines = text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+    const list = state.lists.REPAIR;
+    const existingNames = new Set(list.players.map(p=>p.name));
+    let added = 0, skipped = 0;
+    lines.forEach(line=>{
+      const parts = line.split(/[;,\t]/).map(s=>s.trim());
+      const role = (parts[2]||'').toUpperCase();
+      if(parts.length>=3 && parts[0] && !isNaN(parseFloat(parts[1])) && ['P','D','C','A'].includes(role)){
+        if(existingNames.has(parts[0])){ skipped++; return; }
+        list.players.push({name:parts[0], minBid:parseFloat(parts[1]), role, owner:null});
+        existingNames.add(parts[0]);
+        added++;
+      } else {
+        skipped++;
+      }
+    });
+    await persistLists();
+    showToast(`${added} giocatori aggiunti al listone di riparazione${skipped?` (${skipped} righe ignorate)`:''}.`);
+    repairExternalFile.value = '';
+    render();
+  });
+
+  const saveRepairWinBtn = document.getElementById('btn-save-repairwin');
+  if(saveRepairWinBtn) saveRepairWinBtn.addEventListener('click', async ()=>{
+    const o = document.getElementById('repairwin-open').value;
+    const c = document.getElementById('repairwin-close').value;
+    if(!state.config.repairWindow) state.config.repairWindow = {openAt:null, closeAt:null};
+    state.config.repairWindow.openAt = o ? new Date(o).toISOString() : null;
+    state.config.repairWindow.closeAt = c ? new Date(c).toISOString() : null;
+    await persistConfig();
+    showToast('Orari finestra svincoli salvati.');
+    render();
+  });
+  const quickOpenRepairWinBtn = document.getElementById('btn-quick-open-repairwin');
+  if(quickOpenRepairWinBtn) quickOpenRepairWinBtn.addEventListener('click', async ()=>{
+    const mins = parseInt(document.getElementById('repairwin-quick-min').value) || 60;
+    const now = new Date();
+    if(!state.config.repairWindow) state.config.repairWindow = {openAt:null, closeAt:null};
+    state.config.repairWindow.openAt = now.toISOString();
+    state.config.repairWindow.closeAt = new Date(now.getTime()+mins*60000).toISOString();
+    await persistConfig();
+    showToast('Finestra svincoli aperta.');
+    render();
+  });
+  const closeNowRepairWinBtn = document.getElementById('btn-close-now-repairwin');
+  if(closeNowRepairWinBtn) closeNowRepairWinBtn.addEventListener('click', async ()=>{
+    if(!state.config.repairWindow) state.config.repairWindow = {openAt:null, closeAt:null};
+    state.config.repairWindow.closeAt = new Date().toISOString();
+    await persistConfig();
+    showToast('Finestra svincoli chiusa.');
+    render();
+  });
 
   const addNomBtn = document.getElementById('btn-add-repair-nominations');
   if(addNomBtn) addNomBtn.addEventListener('click', async ()=>{
@@ -2070,6 +2185,18 @@ function renderRepairNominationPanel(){
   const activeCount = pendingMine.length + inRoundMine.length;
   const limitReached = activeCount >= REPAIR_NOMINATION_LIMIT;
   const roleShort = {P:'POR', D:'DIF', C:'CEN', A:'ATT'};
+  const win = (state.config && state.config.repairWindow) || {openAt:null, closeAt:null};
+  const winSt = timeWindowStatus(win);
+  const windowOpen = winSt==='open';
+  const disabled = limitReached || !windowOpen;
+  let windowStatusHtml;
+  if(winSt==='open'){
+    windowStatusHtml = `<div class="hint">Finestra svincoli aperta — chiude tra <span class="mono" data-countdown="repairwin" data-close="${win.closeAt}">--:--:--</span></div>`;
+  } else if(winSt==='closed'){
+    windowStatusHtml = `<div class="hint" style="color:var(--coral);">Finestra svincoli chiusa. Attendi che l'admin ne apra una nuova.</div>`;
+  } else {
+    windowStatusHtml = `<div class="hint">La finestra per gli svincoli non è ancora aperta.</div>`;
+  }
 
   return `
   <div class="bench-wrap">
@@ -2079,10 +2206,11 @@ function renderRepairNominationPanel(){
       <span class="bench-count ${limitReached?'full':''}">${activeCount} / ${REPAIR_NOMINATION_LIMIT} usati</span>
     </div>
     <p class="bench-desc">Manda un giocatore in panchina per metterlo all'asta di riparazione: esce subito dalla rosa e i crediti che avevi pagato tornano subito a te, come base d'asta fissa. Se qualcuno lo prende in asta va a lui, altrimenti resta svincolato e potrà finire a un'altra squadra con il completamento rose. Non torna più nella tua rosa.</p>
+    ${windowStatusHtml}
     ${roster.length===0 ? '<p class="bench-empty">Nessun giocatore in rosa al momento.</p>' : `
     <div class="bench-grid">
       ${roster.map((p,i)=>`
-        <div class="bench-card ${limitReached?'is-off':''}">
+        <div class="bench-card ${disabled?'is-off':''}">
           <div class="bench-card-top">
             <span class="role-chip role-${esc(p.role||'')}">${roleShort[p.role]||'?'}</span>
             <span class="bench-card-name">${esc(p.player)}</span>
@@ -2093,7 +2221,7 @@ function renderRepairNominationPanel(){
           </div>
           <div class="bc-field">
             <label>Ruolo</label>
-            <select data-nominate-role-idx="${i}" ${limitReached?'disabled':''}>
+            <select data-nominate-role-idx="${i}" ${disabled?'disabled':''}>
               <option value="">-- seleziona --</option>
               <option value="P" ${p.role==='P'?'selected':''}>Portiere</option>
               <option value="D" ${p.role==='D'?'selected':''}>Difensore</option>
@@ -2101,7 +2229,7 @@ function renderRepairNominationPanel(){
               <option value="A" ${p.role==='A'?'selected':''}>Attaccante</option>
             </select>
           </div>
-          <button class="bench-card-btn" data-nominate-idx="${i}" ${limitReached?'disabled title="Limite di '+REPAIR_NOMINATION_LIMIT+' svincoli raggiunto"':''}>Svincola</button>
+          <button class="bench-card-btn" data-nominate-idx="${i}" ${disabled?'disabled title="'+(!windowOpen?'La finestra per gli svincoli non è aperta':'Limite di '+REPAIR_NOMINATION_LIMIT+' svincoli raggiunto')+'"':''}>Svincola</button>
         </div>`).join('')}
     </div>`}
     ${pendingMine.length>0 ? `
@@ -2340,6 +2468,10 @@ function attachRepairNominationHandlers(){
       const roster = getUserRoster(state.currentUser);
       const entry = roster[idx];
       if(!entry) return;
+      if(!isRepairWindowOpen()){
+        showToast('La finestra per gli svincoli non è aperta.');
+        return;
+      }
       const activeCount = (state.repairListings||[]).filter(l=>l.username===state.currentUser && !l.resolved).length;
       if(activeCount >= REPAIR_NOMINATION_LIMIT){
         showToast(`Hai raggiunto il limite massimo di ${REPAIR_NOMINATION_LIMIT} svincoli.`);
