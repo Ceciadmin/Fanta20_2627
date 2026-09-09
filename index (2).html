@@ -1,0 +1,2768 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Asta Fantacalcio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Roboto+Mono:wght@500;700&display=swap" rel="stylesheet">
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root{
+  --bg:#F5F3EC;
+  --pitch:#0F3D2E;
+  --pitch2:#155C41;
+  --gold:#C9932F;
+  --gold-l:#F3E3C2;
+  --coral:#B8402F;
+  --coral-l:#F6DBD4;
+  --ink:#182019;
+  --ink-soft:#4B554D;
+  --paper:#FFFFFF;
+  --line:rgba(15,61,46,0.16);
+  --ok:#2E7D4F;
+  --ok-l:#DCEEE0;
+}
+*{box-sizing:border-box;}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:'Inter',sans-serif;}
+h1,h2,h3,.disp{font-family:'Oswald',sans-serif;text-transform:uppercase;letter-spacing:0.02em;color:var(--pitch);}
+.mono{font-family:'Roboto Mono',monospace;}
+button{font-family:'Inter',sans-serif;cursor:pointer;}
+input,select{font-family:'Inter',sans-serif;}
+#app{min-height:100vh;}
+.wrap{max-width:1100px;margin:0 auto;padding:24px 20px 60px;}
+.topbar{background:var(--pitch);color:#fff;padding:14px 20px;display:flex;justify-content:space-between;align-items:center;}
+.topbar .brand{font-family:'Oswald',sans-serif;font-size:20px;letter-spacing:0.06em;text-transform:uppercase;color:#fff;display:flex;align-items:center;gap:10px;}
+.topbar .brand .dot{width:10px;height:10px;border-radius:50%;background:var(--gold);display:inline-block;}
+.topbar .user-info{display:flex;align-items:center;gap:16px;font-size:14px;}
+.credits-pill{background:var(--gold-l);color:#5c4413;border-radius:20px;padding:6px 14px;font-family:'Roboto Mono',monospace;font-weight:700;font-size:14px;}
+.logout-btn{background:transparent;border:1px solid rgba(255,255,255,0.4);color:#fff;padding:7px 14px;border-radius:6px;font-size:13px;}
+.logout-btn:hover{background:rgba(255,255,255,0.12);}
+
+.login-screen{min-height:100vh;display:flex;align-items:center;justify-content:center;background:
+  radial-gradient(circle at 50% -10%, var(--pitch2) 0%, var(--pitch) 55%, #0A2A20 100%);
+  padding:20px;}
+.login-card{background:var(--paper);width:100%;max-width:380px;border-radius:4px;padding:36px 32px;box-shadow:0 20px 50px rgba(0,0,0,0.35);position:relative;}
+.login-card:before{content:'';position:absolute;top:0;left:0;right:0;height:6px;background:repeating-linear-gradient(90deg, var(--pitch) 0 22px, var(--pitch2) 22px 44px);}
+.login-card h1{font-size:26px;margin:6px 0 2px;}
+.login-card p.sub{color:var(--ink-soft);font-size:13px;margin:0 0 24px;}
+.field{margin-bottom:16px;}
+.field label{display:block;font-size:12px;font-weight:600;color:var(--ink-soft);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:6px;}
+.field input, .field select{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:4px;font-size:15px;background:#fff;}
+.field input:focus, .field select:focus{outline:2px solid var(--gold);outline-offset:0;border-color:var(--gold);}
+.btn-primary{width:100%;background:var(--pitch);color:#fff;border:none;padding:12px;border-radius:4px;font-weight:600;font-size:14px;text-transform:uppercase;letter-spacing:0.04em;}
+.btn-primary:hover{background:var(--pitch2);}
+.btn-secondary{background:#fff;border:1px solid var(--line);color:var(--pitch);padding:10px 16px;border-radius:4px;font-weight:600;font-size:13px;}
+.btn-secondary:hover{background:var(--gold-l);}
+.btn-danger{background:var(--coral-l);border:1px solid var(--coral);color:#7a2718;padding:8px 14px;border-radius:4px;font-size:13px;font-weight:600;}
+.btn-small{padding:6px 12px;font-size:12px;border-radius:4px;border:1px solid var(--line);background:#fff;}
+.err-msg{color:var(--coral);font-size:13px;margin-top:10px;}
+.hint{font-size:12px;color:var(--ink-soft);margin-top:6px;line-height:1.5;}
+
+.tabs{display:flex;gap:4px;border-bottom:2px solid var(--line);margin-bottom:24px;flex-wrap:wrap;}
+.tab-btn{background:transparent;border:none;padding:10px 16px;font-weight:600;font-size:13px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:0.03em;border-bottom:3px solid transparent;margin-bottom:-2px;}
+.tab-btn.active{color:var(--pitch);border-bottom-color:var(--gold);}
+.tab-btn .tab-count{display:inline-flex;align-items:center;justify-content:center;min-width:17px;height:17px;padding:0 4px;margin-left:6px;border-radius:9px;background:var(--gold);color:#3a2a08;font-size:10px;font-weight:700;font-family:'Roboto Mono',monospace;vertical-align:2px;}
+
+.admin-layout{display:flex;align-items:flex-start;gap:24px;}
+.admin-sidebar{display:flex;flex-direction:column;gap:3px;flex:0 0 230px;background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:10px;position:sticky;top:16px;}
+.admin-sidebar .tab-btn{width:100%;text-align:left;padding:13px 14px;border-radius:6px;border-bottom:none;margin-bottom:0;border-left:4px solid transparent;font-size:13px;color:var(--ink-soft);}
+.admin-sidebar .tab-btn:hover{background:var(--bg);color:var(--pitch);}
+.admin-sidebar .tab-btn.active{background:var(--gold-l);color:var(--pitch);border-left-color:var(--gold);font-weight:700;}
+.admin-content-area{flex:1;min-width:0;}
+@media (max-width:820px){
+  .admin-layout{flex-direction:column;}
+  .admin-sidebar{flex-direction:row;flex-wrap:wrap;width:100%;position:static;flex-basis:auto;}
+  .admin-sidebar .tab-btn{width:auto;flex:1 1 auto;text-align:center;border-left:none;border-bottom:4px solid transparent;}
+  .admin-sidebar .tab-btn.active{border-left-color:transparent;border-bottom-color:var(--gold);}
+}
+.panel{background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:22px;margin-bottom:20px;}
+.panel h2{font-size:17px;margin:0 0 4px;}
+.panel .desc{color:var(--ink-soft);font-size:13px;margin:0 0 18px;}
+.row-flex{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;}
+.row-flex .field{flex:1;min-width:160px;margin-bottom:0;}
+table{width:100%;border-collapse:collapse;font-size:13px;}
+th{text-align:left;color:var(--ink-soft);font-weight:600;text-transform:uppercase;font-size:11px;letter-spacing:0.03em;padding:8px 10px;border-bottom:2px solid var(--line);}
+td{padding:9px 10px;border-bottom:1px solid var(--line);}
+tr:last-child td{border-bottom:none;}
+.badge{display:inline-block;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.03em;}
+.badge-open{background:var(--ok-l);color:var(--ok);}
+.badge-closed{background:var(--coral-l);color:var(--coral);}
+.badge-setup{background:#EFEBDD;color:var(--ink-soft);}
+.badge-computed{background:var(--gold-l);color:#7a5a15;}
+
+.list-card{background:#fff;border:1px solid var(--line);border-radius:6px;padding:14px;margin-bottom:12px;}
+.list-card h3{font-size:14px;margin:0 0 10px;display:flex;justify-content:space-between;align-items:center;}
+.list-card .players-count{font-size:12px;color:var(--ink-soft);font-weight:400;text-transform:none;}
+
+.pitch-wrap{background:linear-gradient(180deg, var(--pitch) 0%, var(--pitch2) 100%);border-radius:8px 8px 0 0;padding:30px 16px 16px;position:relative;overflow:hidden;}
+.pitch-wrap.standalone{border-radius:8px;}
+.pitch-wrap:before{content:'';position:absolute;inset:0;background:repeating-linear-gradient(180deg, rgba(255,255,255,0.03) 0 40px, transparent 40px 80px);pointer-events:none;}
+.formation{display:flex;flex-direction:column;gap:18px;position:relative;}
+.form-row{display:flex;justify-content:center;gap:14px;flex-wrap:wrap;}
+.tile{background:#fff;border-radius:8px;padding:14px 12px;width:150px;text-align:center;cursor:pointer;border:2px solid transparent;transition:transform 0.12s;}
+.tile:hover{transform:translateY(-3px);border-color:var(--gold);}
+.tile:focus-visible{outline:2px solid var(--gold);}
+.tile.disabled{cursor:not-allowed;opacity:0.72;}
+.tile.disabled:hover{transform:none;border-color:transparent;}
+.tile .role-label{font-size:11px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:0.04em;font-weight:600;}
+.tile h4{font-family:'Oswald',sans-serif;font-size:15px;margin:4px 0 8px;color:var(--pitch);text-transform:uppercase;}
+.tile .status-line{font-family:'Roboto Mono',monospace;font-size:16px;font-weight:700;}
+.tile .status-line.countdown{color:var(--ok);}
+.tile .status-line.closed{color:var(--coral);font-family:'Inter',sans-serif;font-size:12px;text-transform:uppercase;font-weight:700;}
+.tile .status-line.notopen{color:var(--ink-soft);font-family:'Inter',sans-serif;font-size:12px;text-transform:uppercase;font-weight:700;}
+.tile .status-line.done{color:var(--gold);font-family:'Inter',sans-serif;font-size:12px;text-transform:uppercase;font-weight:700;}
+.tile .assigned-player{font-size:11px;color:var(--ink-soft);margin-top:4px;}
+
+/* Panchina: rastrelliera di ganci in stile spogliatoio, sfondo chiaro */
+.bench-wrap{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:0 20px 22px;position:relative;}
+.bench-rail{height:12px;margin:0 -20px 30px;border-radius:9px 9px 0 0;background:
+    repeating-radial-gradient(circle at 22px 6px, #6B4423 0 3px, transparent 3px 44px),
+    linear-gradient(180deg, #C89860 0%, #A87847 100%);
+  box-shadow:0 3px 6px rgba(0,0,0,0.12);
+}
+.bench-head{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:3px;}
+.bench-head h3{margin:0;color:var(--pitch);font-family:'Oswald',sans-serif;text-transform:uppercase;letter-spacing:0.05em;font-size:15px;}
+.bench-count{font-family:'Roboto Mono',monospace;font-size:12px;font-weight:700;color:#5c4413;background:var(--gold-l);border-radius:20px;padding:3px 11px;white-space:nowrap;}
+.bench-count.full{color:#7a2718;background:var(--coral-l);}
+.bench-desc{color:var(--ink-soft);font-size:12.5px;line-height:1.55;margin:0 0 30px;max-width:640px;}
+.bench-grid{display:flex;flex-wrap:wrap;gap:26px 16px;}
+.bench-card{position:relative;background:#fff;border:1px solid var(--line);border-radius:6px;padding:14px 12px 12px;width:180px;display:flex;flex-direction:column;gap:9px;box-shadow:0 4px 10px rgba(15,20,17,0.06);}
+.bench-card:before{content:'';position:absolute;top:-19px;left:50%;transform:translateX(-50%);width:2px;height:19px;background:#B98B54;}
+.bench-card:after{content:'';position:absolute;top:-25px;left:50%;transform:translateX(-50%);width:10px;height:10px;border-radius:50%;background:#8B5E34;border:2px solid #6B4423;}
+.bench-card.is-off{opacity:0.5;}
+.bench-card-top{display:flex;align-items:center;gap:8px;}
+.role-chip{width:24px;height:24px;flex:0 0 24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:'Roboto Mono',monospace;font-weight:700;font-size:11px;}
+.role-chip.role-P{background:#4B5FA6;color:#fff;}
+.role-chip.role-D{background:#2E7D4F;color:#fff;}
+.role-chip.role-C{background:var(--gold);color:#25200f;}
+.role-chip.role-A{background:var(--coral);color:#fff;}
+.role-chip.role-{background:var(--line);color:var(--ink-soft);}
+.bench-card-name{color:var(--ink);font-size:13px;font-weight:600;line-height:1.25;}
+.bench-card .bc-field label{display:block;font-size:10px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:0.03em;margin-bottom:3px;}
+.bc-locked{display:flex;align-items:baseline;gap:6px;font-family:'Roboto Mono',monospace;font-size:14px;font-weight:700;color:var(--pitch);background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:6px 8px;}
+.bc-locked .bc-locked-tag{font-family:'Inter',sans-serif;font-size:10px;font-weight:600;color:var(--ink-soft);text-transform:uppercase;letter-spacing:0.02em;}
+.bench-card select{width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:4px;font-size:12px;background:#fff;color:var(--ink);}
+.bench-card-btn{width:100%;background:var(--coral);color:#fff;border:none;padding:8px;border-radius:4px;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.03em;}
+.bench-card-btn:hover:not(:disabled){background:#9c3626;}
+.bench-card-btn:disabled{background:var(--line);color:var(--ink-soft);cursor:not-allowed;}
+.bench-empty{color:var(--ink-soft);font-size:13px;font-style:italic;padding:8px 0 4px;}
+.bench-sub{margin-top:22px;padding-top:14px;border-top:1px solid var(--line);}
+.bench-sub h4{margin:0 0 8px;color:var(--pitch);font-family:'Oswald',sans-serif;text-transform:uppercase;font-size:12px;letter-spacing:0.05em;}
+.bench-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line);font-size:12.5px;color:var(--ink);}
+.bench-row:last-child{border-bottom:none;}
+.bench-row .brow-meta{font-family:'Roboto Mono',monospace;font-size:11.5px;color:var(--ink-soft);white-space:nowrap;}
+.bench-row .brow-outcome{font-size:11.5px;color:var(--ink-soft);text-align:right;}
+.bench-row .brow-outcome.won{color:var(--ok);}
+.bench-row button{background:#fff;border:1px solid var(--coral);color:var(--coral);padding:4px 11px;border-radius:4px;font-size:11px;font-weight:600;flex:0 0 auto;}
+.bench-row button:hover{background:var(--coral-l);}
+@media (max-width:520px){.bench-card{width:100%;}}
+
+.modal-overlay{position:fixed;inset:0;background:rgba(15,20,17,0.55);display:flex;align-items:center;justify-content:center;z-index:50;padding:20px;}
+.modal-box{background:#fff;border-radius:8px;max-width:560px;width:100%;max-height:88vh;overflow-y:auto;padding:26px 28px;}
+.modal-box h2{margin-top:0;}
+.pref-row{display:grid;grid-template-columns:26px 1fr 130px;gap:8px;align-items:center;margin-bottom:10px;}
+.pref-row .num{font-family:'Roboto Mono',monospace;font-weight:700;color:var(--gold);text-align:center;}
+.pref-row select, .pref-row input{padding:8px 10px;border:1px solid var(--line);border-radius:4px;font-size:13px;}
+.pref-err{color:var(--coral);font-size:11px;margin:-6px 0 8px 34px;}
+.ac-wrap{position:relative;}
+.ac-wrap input{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:4px;font-size:13px;}
+.ac-wrap input.invalid{border-color:var(--coral);}
+.ac-suggestions{position:absolute;top:calc(100% + 3px);left:0;right:0;background:#fff;border:1px solid var(--line);border-radius:4px;box-shadow:0 8px 20px rgba(15,20,17,0.14);max-height:220px;overflow-y:auto;z-index:60;}
+.ac-item{padding:8px 10px;font-size:13px;cursor:pointer;display:flex;justify-content:space-between;gap:8px;align-items:center;}
+.ac-item:hover, .ac-item.hi{background:var(--gold-l);}
+.ac-item .ac-name{color:var(--ink);}
+.ac-item .ac-meta{color:var(--ink-soft);font-size:11px;white-space:nowrap;}
+.ac-empty{padding:8px 10px;font-size:12px;color:var(--ink-soft);}
+.modal-actions{display:flex;gap:10px;margin-top:18px;justify-content:flex-end;}
+.summary-row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--line);font-size:14px;}
+.summary-row:last-child{border-bottom:none;}
+.summary-row .bid{font-family:'Roboto Mono',monospace;font-weight:700;color:var(--pitch);}
+
+.empty-note{color:var(--ink-soft);font-size:13px;font-style:italic;padding:14px 0;}
+.file-drop{border:1.5px dashed var(--line);border-radius:6px;padding:16px;text-align:center;font-size:13px;color:var(--ink-soft);}
+.file-drop input{margin-top:8px;}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:20px;}
+@media (max-width:700px){.two-col{grid-template-columns:1fr;}.tile{width:130px;}}
+.toast{position:fixed;bottom:20px;right:20px;background:var(--pitch);color:#fff;padding:12px 20px;border-radius:6px;font-size:13px;z-index:100;box-shadow:0 8px 20px rgba(0,0,0,0.25);}
+.credit-neg{color:var(--coral);}
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+
+const firebaseConfig = {
+  apiKey: "AIzaSyDtAWOdASYaU9cF8BmdHmeQXzlst-JhrS4",
+  authDomain: "fanta20-2627.firebaseapp.com",
+  projectId: "fanta20-2627",
+  storageBucket: "fanta20-2627.firebasestorage.app",
+  messagingSenderId: "565202907267",
+  appId: "1:565202907267:web:3b8e818ece2b0c90832bb6",
+  measurementId: "G-L3X105H8CM"
+};
+let db = null;
+let fbReady = false;
+
+const LISTS_META = [
+  {id:'GK',    label:'Portieri',             row:0},
+  {id:'DEF1',  label:'Difensori 1',          row:1},
+  {id:'DEF2',  label:'Difensori 2',          row:1},
+  {id:'DEF3',  label:'Difensori 3',         row:1},
+  {id:'MID1',  label:'Centrocampisti 1',    row:2},
+  {id:'MID2',  label:'Centrocampisti 2',     row:2},
+  {id:'MID3',  label:'Centrocampisti 3',    row:2},
+  {id:'FWD1',  label:'Attaccanti 1',         row:3},
+  {id:'FWD2',  label:'Attaccanti 2',         row:3},
+];
+
+const OPEN_LISTS_META = [
+  {id:'OPEN1', label:'Lista aperta round 1', row:4},
+  {id:'OPEN2', label:'Lista aperta round 2', row:4},
+  {id:'REPAIR', label:'Asta di riparazione', row:5},
+];
+
+const ROLE_QUOTA = {D:8, C:8, A:4};
+// Numero massimo di giocatori che ogni utente può mettere all'asta di
+// riparazione (svincolare) senza che siano ancora stati risolti (in attesa
+// o già nel listone del round in corso). Una volta risolta una nomina
+// (venduta o svincolata definitivamente) non conta più nel limite.
+const REPAIR_NOMINATION_LIMIT = 6;
+const ROLE_LABEL = {D:'Difensore', C:'Centrocampista', A:'Attaccante', P:'Portiere'};
+// Mappa lista a ruolo fisso -> ruolo, per contare quanti D/C/A ha già ciascun utente
+const LIST_ROLE = {GK:'P', DEF1:'D', DEF2:'D', DEF3:'D', MID1:'C', MID2:'C', MID3:'C', FWD1:'A', FWD2:'A'};
+
+let state = {
+  loading: true,
+  currentUser: null,
+  view: 'login',
+  adminTab: 'utenti',
+  users: [],
+  config: {initialCredits: 500, repairWindow:{openAt:null, closeAt:null}},
+  lists: {},
+  submissions: {},
+  loginError: '',
+  loginAdminMode: false,
+  openListId: null,
+  userTab: 'campo', // 'campo' (formazione/liste) o 'panchina' (svincoli asta di riparazione)
+  prefDraft: null,
+  prefErrors: {},
+  toast: null,
+  squadCompletion: null, // {assigned:{user:[{player,price,role}]}, computedAt}
+  manualAssignments: {}, // {user:[{id,player,price,role}]} - assegnazioni manuali admin pre-completamento
+  dataAnomaly: null, // array di nomi documento che risultano assenti in modo sospetto (vedi loadAll)
+  anomalyBackupTs: null, // timestamp del backup usato per il recupero temporaneo in memoria
+  prefImportResult: null, // esito dell'ultimo import di preferenze da file
+  finalRosters: null, // {username:[{player,price}]} - fonte di verità rose caricata da admin da file, sostituisce il calcolo automatico
+  finalRostersUpdatedAt: null,
+  rosterImport: null, // {teams:[{excelName, username, players:[{name,price}]}]} - anteprima import rose in corso, non persistita
+  repairListings: [], // [{id, username, player, price, minBid, role, addedAt, resolved, wonBy, finalPrice, returnedUnsold}]
+};
+
+function uid(){ return Math.random().toString(36).slice(2,10); }
+
+function defaultLists(){
+  const o = {};
+  LISTS_META.forEach(m=>{
+    o[m.id] = {id:m.id, label:m.label, players:[], openAt:null, closeAt:null, status:'setup', assigned:null, lockedAt:{}};
+  });
+  OPEN_LISTS_META.forEach(m=>{
+    o[m.id] = {id:m.id, label:m.label, players:[], openAt:null, closeAt:null, status:'setup', assigned:null, assignedPlayers:null, lockedAt:{}};
+  });
+  return o;
+}
+
+// ================= IMPORT/EXPORT PREFERENZE =================
+// Formato riga: lista;utente;giocatore;offerta (accetta anche virgola o tab).
+// "lista" può essere l'ID interno (GK, DEF1...) o l'etichetta visibile (Portieri, Difensori 1...).
+// L'ordine delle righe per stesso utente+lista determina l'ordine di preferenza.
+
+function resolveListId(raw){
+  if(!raw) return null;
+  const s = String(raw).trim().toLowerCase();
+  const all = [...LISTS_META, ...OPEN_LISTS_META];
+  const byId = all.find(m=>m.id.toLowerCase()===s);
+  if(byId) return byId.id;
+  const byLabel = all.find(m=>m.label.toLowerCase()===s);
+  return byLabel ? byLabel.id : null;
+}
+
+function findPlayerInList(list, name){
+  const s = String(name||'').trim().toLowerCase();
+  return (list.players||[]).find(p=>p.name.trim().toLowerCase()===s) || null;
+}
+
+function findUserByName(uname){
+  const s = String(uname||'').trim().toLowerCase();
+  return state.users.find(u=>u.username.trim().toLowerCase()===s) || null;
+}
+
+function parsePrefImportLine(line){
+  const parts = line.split(/[;,\t]/).map(s=>s.trim());
+  if(parts.length<4) return null;
+  return {lista:parts[0], utente:parts[1], giocatore:parts[2], offerta:parts[3]};
+}
+
+// Importa preferenze in blocco in state.submissions (NON persiste da solo:
+// chi chiama deve poi salvare con persistSubs()/persistLists()).
+async function importPreferencesFromText(text){
+  const lines = text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+  const startIdx = /^(lista|list)\b/i.test(lines[0]||'') ? 1 : 0;
+  const grouped = {}; // `${listId}__${username}` -> [{player,bid}]
+  const errors = [];
+  let okCount = 0;
+  for(let i=startIdx;i<lines.length;i++){
+    const rowNum = i+1;
+    const row = parsePrefImportLine(lines[i]);
+    if(!row){ errors.push(`Riga ${rowNum}: servono 4 campi (lista;utente;giocatore;offerta).`); continue; }
+    const listId = resolveListId(row.lista);
+    if(!listId){ errors.push(`Riga ${rowNum}: lista "${row.lista}" non riconosciuta.`); continue; }
+    const user = findUserByName(row.utente);
+    if(!user){ errors.push(`Riga ${rowNum}: utente "${row.utente}" non trovato.`); continue; }
+    const list = state.lists[listId];
+    const player = findPlayerInList(list, row.giocatore);
+    if(!player){ errors.push(`Riga ${rowNum}: giocatore "${row.giocatore}" non trovato in ${list.label}.`); continue; }
+    const bid = parseFloat(String(row.offerta).replace(',','.'));
+    if(isNaN(bid) || bid < player.minBid){ errors.push(`Riga ${rowNum}: offerta non valida per ${player.name} (minimo ${player.minBid}).`); continue; }
+    const key = listId+'__'+user.username;
+    if(!grouped[key]) grouped[key] = [];
+    const isFixed = LISTS_META.some(m=>m.id===listId);
+    if(isFixed && grouped[key].length>=6){ errors.push(`Riga ${rowNum}: superate le 6 preferenze per ${list.label}/${user.username}, riga ignorata.`); continue; }
+    if(grouped[key].some(p=>p.player===player.name)){ errors.push(`Riga ${rowNum}: ${player.name} già inserito per ${user.username} in questa lista.`); continue; }
+    grouped[key].push({player: player.name, bid});
+    okCount++;
+  }
+  const usersAffected = new Set();
+  Object.keys(grouped).forEach(key=>{
+    const sepIdx = key.indexOf('__');
+    const listId = key.slice(0,sepIdx), username = key.slice(sepIdx+2);
+    usersAffected.add(username);
+    if(!state.submissions[listId]) state.submissions[listId] = {};
+    state.submissions[listId][username] = grouped[key];
+    const list = state.lists[listId];
+    if(!list.lockedAt) list.lockedAt = {};
+    if(!(username in list.lockedAt)) list.lockedAt[username] = list.openAt || null;
+  });
+  return {okCount, errors, usersAffected: usersAffected.size};
+}
+
+function exportPreferencesCSV(){
+  const rows = [['lista','utente','giocatore','offerta']];
+  [...LISTS_META, ...OPEN_LISTS_META].forEach(m=>{
+    const subs = state.submissions[m.id] || {};
+    Object.keys(subs).forEach(username=>{
+      (subs[username]||[]).forEach(p=>{ rows.push([m.label, username, p.player, p.bid]); });
+    });
+  });
+  const csv = rows.map(r=>r.map(c=>String(c).replace(/;/g,',')).join(';')).join('\n');
+  const blob = new Blob([csv], {type:'text/csv'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `preferenze_${Date.now()}.csv`;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+}
+
+const DEFAULT_USERS = [{username:'admin', password:'admin', role:'admin', credits:0}];
+const DEFAULT_CONFIG = {initialCredits:500, repairWindow:{openAt:null, closeAt:null}};
+const loadedDocs = new Set();
+const BACKUP_COLLECTION = 'fantacalcio_backups';
+const BACKUP_THROTTLE_MS = 2*60*1000; // massimo un backup automatico ogni 2 minuti
+const BACKUP_KEEP = 40; // quanti backup automatici conservare
+let lastAutoBackupAt = 0;
+let backupsCache = []; // lista backup per la scheda admin "Backup"
+
+function checkFirebaseConfigured(){
+  return firebaseConfig.apiKey && !firebaseConfig.apiKey.startsWith('INCOLLA_QUI');
+}
+
+function snapshotState(){
+  return {
+    users: state.users,
+    config: state.config,
+    lists: state.lists,
+    submissions: state.submissions,
+    squadCompletion: state.squadCompletion,
+    manualAssignments: state.manualAssignments,
+    finalRosters: state.finalRosters,
+    repairListings: state.repairListings,
+  };
+}
+
+// Recupera l'ultimo backup automatico salvato (se esiste). Usato sia per il
+// controllo di sicurezza in fase di caricamento, sia dalla scheda Backup.
+async function fetchLatestBackup(){
+  try{
+    const snap = await db.collection(BACKUP_COLLECTION).orderBy('ts','desc').limit(1).get();
+    if(snap.empty) return null;
+    return snap.docs[0].data(); // {ts, data:{...}}
+  }catch(e){ return null; }
+}
+
+async function loadBackupsList(){
+  try{
+    const snap = await db.collection(BACKUP_COLLECTION).orderBy('ts','desc').limit(25).get();
+    backupsCache = snap.docs.map(d=>({id:d.id, ts:d.data().ts}));
+  }catch(e){ backupsCache = []; }
+}
+
+function formatBackupDate(iso){
+  try{ return new Date(iso).toLocaleString('it-IT'); }catch(e){ return iso; }
+}
+
+// Salva uno snapshot completo dei dati in una collezione SEPARATA da quella
+// principale, così un problema sulla collezione dati non intacca i backup.
+// Throttled per non scrivere ad ogni singola modifica.
+async function autoBackupIfDue(){
+  const now = Date.now();
+  if(now - lastAutoBackupAt < BACKUP_THROTTLE_MS) return;
+  lastAutoBackupAt = now;
+  try{
+    const iso = new Date().toISOString();
+    await db.collection(BACKUP_COLLECTION).doc(iso).set({ts: iso, data: snapshotState()});
+    await pruneOldBackups();
+  }catch(e){ /* un backup fallito non deve mai bloccare l'app */ }
+}
+
+async function pruneOldBackups(){
+  try{
+    const snap = await db.collection(BACKUP_COLLECTION).orderBy('ts','desc').get();
+    const extra = snap.docs.slice(BACKUP_KEEP);
+    if(!extra.length) return;
+    const batch = db.batch();
+    extra.forEach(d=>batch.delete(d.ref));
+    await batch.commit();
+  }catch(e){}
+}
+
+function flagAnomaly(docName){
+  if(!state.dataAnomaly) state.dataAnomaly = [];
+  if(!state.dataAnomaly.includes(docName)) state.dataAnomaly.push(docName);
+}
+
+async function restoreFromBackupDoc(id){
+  const doc = await db.collection(BACKUP_COLLECTION).doc(id).get();
+  if(!doc.exists){ showToast('Backup non trovato.'); return; }
+  applyBackupData(doc.data().data);
+  await persistAllDocs();
+  state.dataAnomaly = null;
+  showToast('Backup ripristinato e salvato.');
+  render();
+}
+
+function applyBackupData(data){
+  state.users = (data && data.users) || DEFAULT_USERS;
+  state.config = normalizeConfig((data && data.config) || DEFAULT_CONFIG);
+  state.lists = (data && data.lists) || defaultLists();
+  state.submissions = (data && data.submissions) || {};
+  state.squadCompletion = (data && data.squadCompletion) || null;
+  state.manualAssignments = (data && data.manualAssignments) || {};
+  state.finalRosters = (data && data.finalRosters) || null;
+  state.repairListings = (data && data.repairListings) || [];
+}
+
+// Garantisce che state.config abbia sempre tutti i campi attesi, anche se
+// il documento salvato su Firestore è stato creato prima dell'introduzione
+// di un nuovo campo (es. repairWindow).
+function normalizeConfig(cfg){
+  const c = cfg || {};
+  if(!c.repairWindow) c.repairWindow = {openAt:null, closeAt:null};
+  return c;
+}
+
+async function persistAllDocs(){
+  await Promise.all([persistUsers(), persistConfig(), persistLists(), persistSubs(), persistSquadCompletion(), persistManualAssignments(), persistFinalRosters(), persistRepairListings()]);
+}
+
+async function loadAll(){
+  if(!checkFirebaseConfigured()){
+    state.loading = false;
+    state.configMissing = true;
+    render();
+    return;
+  }
+  try{
+    firebase.initializeApp(firebaseConfig);
+    db = firebase.firestore();
+    fbReady = true;
+  }catch(e){
+    state.loading = false;
+    state.configError = String(e && e.message || e);
+    render();
+    return;
+  }
+  const col = db.collection('fantacalcio_data');
+
+  // Controllo di sicurezza: verifichiamo UNA VOLTA, prima di tutto, se esiste
+  // già uno storico di backup automatici. Se esiste, vuol dire che l'app è
+  // già stata usata in passato con dati reali: in tal caso, se un documento
+  // principale risulta "non esistente", NON lo ricreiamo vuoto in automatico
+  // (potrebbe essere stato cancellato per errore) — carichiamo invece
+  // temporaneamente in memoria l'ultimo backup disponibile e segnaliamo
+  // l'anomalia, lasciando a un amministratore la decisione finale.
+  const latestBackup = await fetchLatestBackup();
+  const backupsExist = !!latestBackup;
+  if(backupsExist) state.anomalyBackupTs = latestBackup.ts;
+
+  function handleDoc(docName, applyValue, defaultValue, backupField){
+    col.doc(docName).onSnapshot(async doc=>{
+      if(doc.exists){
+        applyValue(doc.data().value);
+      } else if(backupsExist){
+        applyValue((latestBackup.data && latestBackup.data[backupField]) !== undefined ? latestBackup.data[backupField] : defaultValue);
+        flagAnomaly(docName);
+      } else {
+        applyValue(defaultValue);
+        await col.doc(docName).set({value: defaultValue});
+      }
+      loadedDocs.add(docName);
+      finishLoadingIfReady();
+      render();
+    }, docName==='users' ? (err=>{ state.configError = err.message; state.loading=false; render(); }) : undefined);
+  }
+
+  handleDoc('users', v=>{ state.users = v; }, DEFAULT_USERS, 'users');
+  handleDoc('config', v=>{ state.config = normalizeConfig(v); }, DEFAULT_CONFIG, 'config');
+  handleDoc('submissions', v=>{ state.submissions = v; }, {}, 'submissions');
+  handleDoc('squadCompletion', v=>{ state.squadCompletion = v; }, null, 'squadCompletion');
+  handleDoc('manualAssignments', v=>{ state.manualAssignments = v; }, {}, 'manualAssignments');
+  handleDoc('finalRosters', v=>{ state.finalRosters = v; }, null, 'finalRosters');
+  handleDoc('repairListings', v=>{ state.repairListings = v; }, [], 'repairListings');
+
+  col.doc('lists').onSnapshot(async doc=>{
+    if(doc.exists){ state.lists = doc.data().value; }
+    else if(backupsExist){
+      state.lists = (latestBackup.data && latestBackup.data.lists) || defaultLists();
+      flagAnomaly('lists');
+    } else {
+      state.lists = defaultLists(); await col.doc('lists').set({value: state.lists});
+    }
+    // Migrazione: se il documento esisteva già senza le liste aperte, le crea
+    let needsMigration = false;
+    OPEN_LISTS_META.forEach(m=>{
+      if(!state.lists[m.id]){
+        state.lists[m.id] = {id:m.id, label:m.label, players:[], openAt:null, closeAt:null, status:'setup', assigned:null, assignedPlayers:null, lockedAt:{}};
+        needsMigration = true;
+      }
+    });
+    // Migrazione: aggiunge lockedAt (blocco compilazione per riapertura) alle liste esistenti
+    [...LISTS_META, ...OPEN_LISTS_META].forEach(m=>{
+      if(state.lists[m.id] && !state.lists[m.id].lockedAt){
+        state.lists[m.id].lockedAt = {};
+        needsMigration = true;
+      }
+    });
+    if(needsMigration && !state.dataAnomaly) await col.doc('lists').set({value: state.lists});
+    loadedDocs.add('lists');
+    finishLoadingIfReady();
+    render();
+  });
+}
+
+function finishLoadingIfReady(){
+  if(['users','config','lists','submissions','squadCompletion','manualAssignments','finalRosters','repairListings'].every(k=>loadedDocs.has(k))){
+    state.loading = false;
+  }
+}
+
+async function persistUsers(){ await db.collection('fantacalcio_data').doc('users').set({value: state.users}); autoBackupIfDue(); }
+async function persistConfig(){ await db.collection('fantacalcio_data').doc('config').set({value: state.config}); autoBackupIfDue(); }
+async function persistLists(){ await db.collection('fantacalcio_data').doc('lists').set({value: state.lists}); autoBackupIfDue(); }
+async function persistSubs(){ await db.collection('fantacalcio_data').doc('submissions').set({value: state.submissions}); autoBackupIfDue(); }
+async function persistSquadCompletion(){ await db.collection('fantacalcio_data').doc('squadCompletion').set({value: state.squadCompletion}); autoBackupIfDue(); }
+async function persistManualAssignments(){ await db.collection('fantacalcio_data').doc('manualAssignments').set({value: state.manualAssignments}); autoBackupIfDue(); }
+async function persistFinalRosters(){ await db.collection('fantacalcio_data').doc('finalRosters').set({value: state.finalRosters}); autoBackupIfDue(); }
+async function persistRepairListings(){ await db.collection('fantacalcio_data').doc('repairListings').set({value: state.repairListings}); autoBackupIfDue(); }
+
+function showToast(msg){
+  state.toast = msg;
+  render();
+  setTimeout(()=>{ state.toast=null; render(); }, 2600);
+}
+
+function esc(s){
+  return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function fmtCredits(n){
+  return (n<0?'-':'') + Math.abs(n).toLocaleString('it-IT');
+}
+
+// ---------- LOGIN ----------
+function renderLogin(){
+  const players = state.users.filter(u=>u.role!=='admin');
+  const adminMode = state.loginAdminMode;
+  return `
+  <div class="login-screen">
+    <div class="login-card">
+      <span style="font-size:11px;color:var(--gold);font-weight:700;letter-spacing:0.1em;">ASTA STAGIONE 2026/27</span>
+      <h1>Fantacalcio</h1>
+      <p class="sub">Accedi con le tue credenziali per fare le tue offerte.</p>
+      <form id="login-form">
+        <div class="field">
+          <label for="lu">Nome utente</label>
+          ${adminMode
+            ? `<input id="lu" type="text" autocomplete="username" required>`
+            : `<select id="lu" required>
+                <option value="">Seleziona il tuo nome</option>
+                ${players.map(u=>`<option value="${esc(u.username)}">${esc(u.username)}</option>`).join('')}
+              </select>`
+          }
+        </div>
+        <div class="field">
+          <label for="lp">Password</label>
+          <input id="lp" type="password" autocomplete="current-password" required>
+        </div>
+        ${state.loginError ? `<div class="err-msg">${esc(state.loginError)}</div>` : ''}
+        <button type="submit" class="btn-primary" style="margin-top:6px;">Entra</button>
+      </form>
+      <p class="hint" style="margin-top:14px;"><a href="#" id="toggle-admin-login" style="color:var(--ink-soft);">${adminMode ? 'Torna alla selezione utente' : 'Accedi come amministratore'}</a></p>
+    </div>
+  </div>`;
+}
+
+function attachLoginHandlers(){
+  const f = document.getElementById('login-form');
+  if(!f) return;
+  f.addEventListener('submit', e=>{
+    e.preventDefault();
+    const u = document.getElementById('lu').value.trim();
+    const p = document.getElementById('lp').value;
+    const found = state.users.find(x=>x.username===u && x.password===p);
+    if(!found){ state.loginError = 'Nome utente o password non corretti.'; render(); return; }
+    state.currentUser = found.username;
+    state.loginError = '';
+    state.view = found.role==='admin' ? 'admin' : 'user';
+    render();
+  });
+  const toggleAdmin = document.getElementById('toggle-admin-login');
+  if(toggleAdmin) toggleAdmin.addEventListener('click', e=>{
+    e.preventDefault();
+    state.loginAdminMode = !state.loginAdminMode;
+    state.loginError = '';
+    render();
+  });
+}
+
+// ---------- TOPBAR ----------
+function currentUserObj(){ return state.users.find(u=>u.username===state.currentUser); }
+
+function renderTopbar(){
+  const me = currentUserObj();
+  return `
+  <div class="topbar">
+    <div class="brand"><span class="dot"></span>Fantacalcio</div>
+    <div class="user-info">
+      <span>${esc(state.currentUser)}${me && me.role==='admin' ? ' <span style="opacity:0.7">(admin)</span>' : ''}</span>
+      ${me && me.role!=='admin' ? `<span class="credits-pill">${fmtCredits(me.credits)} cr</span>` : ''}
+      <button class="logout-btn" id="btn-logout">Esci</button>
+    </div>
+  </div>`;
+}
+
+function attachTopbarHandlers(){
+  const b = document.getElementById('btn-logout');
+  if(b) b.addEventListener('click', ()=>{ state.currentUser=null; state.view='login'; render(); });
+}
+
+// ================= ADMIN =================
+function renderAdmin(){
+  const tabs = [
+    ['utenti','Utenti'],
+    ['liste','Setup liste'],
+    ['liste_aperte','Liste aperte'],
+    ['completamento','Completamento rose'],
+    ['riparazione','Asta riparazione'],
+    ['crediti','Crediti'],
+    ['monitoraggio','Monitoraggio live'],
+    ['assegnazioni','Assegnazioni'],
+    ['export','Esporta'],
+    ['backup','Backup'],
+    ['preferenze','Preferenze utenti'],
+  ];
+  return `
+  ${renderTopbar()}
+  <div class="wrap">
+    ${renderAnomalyBanner(true)}
+    <div class="admin-layout">
+      <div class="admin-sidebar">
+        ${tabs.map(([k,l])=>`<button class="tab-btn ${state.adminTab===k?'active':''}" data-tab="${k}">${l}</button>`).join('')}
+      </div>
+      <div class="admin-content-area">
+        <div id="admin-content">${renderAdminTab()}</div>
+      </div>
+    </div>
+  </div>
+  ${state.toast?`<div class="toast">${esc(state.toast)}</div>`:''}
+  `;
+}
+
+function renderAnomalyBanner(isAdmin){
+  if(!state.dataAnomaly || !state.dataAnomaly.length) return '';
+  const when = state.anomalyBackupTs ? formatBackupDate(state.anomalyBackupTs) : 'sconosciuta';
+  if(!isAdmin){
+    return `<div class="panel" style="border:2px solid var(--coral);background:var(--coral-l);">
+      <h2 style="color:#7a2718;">⚠️ Dati temporaneamente ripristinati da backup</h2>
+      <p class="desc" style="color:#7a2718;">L'app ha rilevato un'anomalia nei dati e sta mostrando una copia di sicurezza (backup del ${esc(when)}) non ancora confermata. Contatta l'amministratore: deve confermare il ripristino dalla scheda "Backup".</p>
+    </div>`;
+  }
+  return `<div class="panel" style="border:2px solid var(--coral);background:var(--coral-l);">
+    <h2 style="color:#7a2718;">⚠️ Dati mancanti rilevati: ${state.dataAnomaly.map(esc).join(', ')}</h2>
+    <p class="desc" style="color:#7a2718;">Questi documenti risultano assenti sul database, ma esiste uno storico di backup automatici — quindi NON li abbiamo ricreati vuoti in automatico, per non perdere altri dati. Stai vedendo ora una copia temporanea (in memoria, non ancora salvata) dell'ultimo backup disponibile, del <b>${esc(when)}</b>.</p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+      <button class="btn-primary" style="width:auto;" id="btn-confirm-anomaly-restore">Conferma e salva questo backup adesso</button>
+      <button class="btn-secondary" id="btn-goto-backup-tab">Scegli un backup diverso / inizializza vuoto</button>
+    </div>
+  </div>`;
+}
+
+function renderAdminTab(){
+  if(state.adminTab==='utenti') return renderAdminUtenti();
+  if(state.adminTab==='liste') return renderAdminListe();
+  if(state.adminTab==='crediti') return renderAdminCrediti();
+  if(state.adminTab==='monitoraggio') return renderAdminMonitoraggio();
+  if(state.adminTab==='assegnazioni') return renderAdminAssegnazioni();
+  if(state.adminTab==='export') return renderAdminExport();
+  if(state.adminTab==='liste_aperte') return renderAdminListeAperte();
+  if(state.adminTab==='completamento') return renderAdminCompletamento();
+  if(state.adminTab==='riparazione') return renderAdminRiparazione();
+  if(state.adminTab==='backup') return renderAdminBackup();
+  if(state.adminTab==='preferenze') return renderAdminPreferenze();
+  return '';
+}
+
+function renderAdminPreferenze(){
+  const listOptions = [...LISTS_META, ...OPEN_LISTS_META].map(m=>`${m.id} (${m.label})`).join(', ');
+  return `
+  <div class="panel">
+    <h2>Importa preferenze da file</h2>
+    <p class="desc">Una riga per ogni preferenza, campi separati da <b>;</b> (vanno bene anche virgola o tab):<br>
+    <code>lista;utente;giocatore;offerta</code> — esempio: <code>Portieri;mario;Meret;15</code>.<br>
+    Per "lista" puoi usare il nome visibile (es. "Portieri") o l'ID interno: ${esc(listOptions)}.<br>
+    L'ordine delle righe per lo stesso utente+lista determina l'ordine di preferenza. Le liste fisse (Portieri/Difensori/Centrocampisti/Attaccanti) accettano fino a 6 preferenze per utente; le liste aperte anche meno. I nomi dei giocatori devono corrispondere a quelli già presenti nella lista su questa app.</p>
+    <div class="field">
+      <label>Incolla qui il contenuto (oppure carica un file sotto)</label>
+      <textarea id="pref-import-text" rows="6" style="width:100%;padding:10px;border:1px solid var(--line);border-radius:4px;font-family:'Roboto Mono',monospace;font-size:12px;" placeholder="lista;utente;giocatore;offerta"></textarea>
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+      <label class="btn-secondary" style="cursor:pointer;">Carica file .csv<input type="file" accept=".csv,text/csv,text/plain" id="pref-import-file" style="display:none;"></label>
+      <button class="btn-primary" style="width:auto;" id="btn-import-preferences">Importa preferenze</button>
+    </div>
+    ${state.prefImportResult ? renderPrefImportResult(state.prefImportResult) : ''}
+  </div>
+  <div class="panel">
+    <h2>Esporta preferenze attuali</h2>
+    <p class="desc">Scarica in .csv tutte le preferenze già inserite in app — utile come backup e come base pronta per un futuro re-import (stesso formato).</p>
+    <button class="btn-secondary" id="btn-export-preferences">Scarica preferenze (.csv)</button>
+  </div>`;
+}
+
+function renderPrefImportResult(r){
+  return `<div class="list-card" style="margin-top:14px;">
+    <h3>Risultato import</h3>
+    <p class="hint">${r.okCount} preferenze importate per ${r.usersAffected} utenti.</p>
+    ${r.errors.length ? `<p class="hint" style="color:var(--coral);">${r.errors.length} righe ignorate:</p><ul style="font-size:12px;color:var(--ink-soft);max-height:180px;overflow-y:auto;margin:0;padding-left:18px;">${r.errors.map(e=>`<li>${esc(e)}</li>`).join('')}</ul>` : ''}
+  </div>`;
+}
+
+function renderAdminBackup(){
+  const rows = backupsCache.map(b=>`
+    <tr>
+      <td>${esc(formatBackupDate(b.ts))}</td>
+      <td><button class="btn-small" data-restore-backup="${esc(b.id)}">Ripristina questo</button></td>
+    </tr>`).join('');
+  return `
+  <div class="panel">
+    <h2>Backup manuale</h2>
+    <p class="desc">Scarica una copia di tutti i dati attuali sul tuo computer (utenti, liste, offerte, assegnazioni), o ripristina da un file scaricato in precedenza.</p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+      <button class="btn-primary" style="width:auto;" id="btn-download-backup">Scarica backup adesso (.json)</button>
+      <label class="btn-secondary" style="cursor:pointer;">Importa da file .json<input type="file" accept="application/json" id="input-import-backup" style="display:none;"></label>
+    </div>
+  </div>
+  <div class="panel">
+    <h2>Backup automatici</h2>
+    <p class="desc">L'app salva automaticamente una copia dei dati ad ogni modifica (al massimo una ogni 2 minuti, ultimi ${BACKUP_KEEP} conservati). Usali per tornare a un punto preciso nel tempo.</p>
+    <table>
+      <thead><tr><th>Data e ora</th><th></th></tr></thead>
+      <tbody>${rows || '<tr><td colspan="2" class="empty-note">Nessun backup automatico ancora disponibile (verrà creato alla prossima modifica).</td></tr>'}</tbody>
+    </table>
+  </div>
+  ${state.dataAnomaly && state.dataAnomaly.length ? `
+  <div class="panel">
+    <h2>Inizializzazione vuota</h2>
+    <p class="desc">Da usare solo se sei sicuro che i documenti mancanti (${state.dataAnomaly.map(esc).join(', ')}) debbano davvero partire da zero, e non da un backup.</p>
+    <button class="btn-danger" id="btn-force-empty-init">Inizializza comunque vuoto</button>
+  </div>` : ''}`;
+}
+
+function renderAdminUtenti(){
+  const players = state.users.filter(u=>u.role!=='admin');
+  const me = currentUserObj();
+  return `
+  <div class="panel">
+    <h2>Cambia password amministratore</h2>
+    <p class="desc">Aggiorna le credenziali del tuo account amministratore.</p>
+    <div class="row-flex">
+      <div class="field"><label>Password attuale</label><input id="ap-current" type="password" autocomplete="current-password"></div>
+      <div class="field"><label>Nuova password</label><input id="ap-new" type="password" autocomplete="new-password"></div>
+      <div class="field"><label>Conferma nuova password</label><input id="ap-confirm" type="password" autocomplete="new-password"></div>
+      <button class="btn-primary" style="width:auto;" id="btn-change-admin-pass">Aggiorna password</button>
+    </div>
+    ${state.adminPassError ? `<div class="err-msg">${esc(state.adminPassError)}</div>` : ''}
+  </div>
+  <div class="panel">
+    <h2>Aggiungi utente</h2>
+    <p class="desc">Crea un account per ogni partecipante all'asta.</p>
+    <div class="row-flex">
+      <div class="field"><label>Nome utente</label><input id="nu-user" type="text"></div>
+      <div class="field"><label>Password</label><input id="nu-pass" type="text"></div>
+      <button class="btn-primary" style="width:auto;" id="btn-add-user">Aggiungi</button>
+    </div>
+  </div>
+  <div class="panel">
+    <h2>Importa in blocco</h2>
+    <p class="desc">Incolla o carica un file .txt con una riga per utente, formato <span class="mono">nomeutente;password</span></p>
+    <textarea id="bulk-users" rows="4" style="width:100%;padding:10px;border:1px solid var(--line);border-radius:4px;font-family:'Roboto Mono',monospace;font-size:13px;" placeholder="mario;pass123&#10;luca;pass456"></textarea>
+    <div class="row-flex" style="margin-top:10px;">
+      <input type="file" id="bulk-users-file" accept=".txt">
+      <button class="btn-secondary" id="btn-bulk-users">Importa elenco</button>
+    </div>
+  </div>
+  <div class="panel">
+    <h2>Partecipanti (${players.length})</h2>
+    ${players.length===0 ? '<p class="empty-note">Nessun utente ancora creato.</p>' : `
+    <table>
+      <tr><th>Nome utente</th><th>Password</th><th>Crediti</th><th></th></tr>
+      ${players.map(u=>`
+        <tr>
+          <td>${esc(u.username)}</td>
+          <td class="mono">${esc(u.password)}</td>
+          <td class="mono ${u.credits<0?'credit-neg':''}">${fmtCredits(u.credits)}</td>
+          <td><button class="btn-small" data-del-user="${esc(u.username)}">Rimuovi</button></td>
+        </tr>`).join('')}
+    </table>`}
+  </div>`;
+}
+
+function renderAdminListe(){
+  return `
+  <div class="panel">
+    <p class="desc">Per ciascuna delle 9 liste carica il file .txt dei giocatori (formato <span class="mono">NomeGiocatore;OffertaMinima</span>, una riga per giocatore) e imposta apertura/chiusura.</p>
+  </div>
+  ${LISTS_META.map(m=>renderListSetupCard(m)).join('')}
+  `;
+}
+
+function renderListSetupCard(m){
+  const list = state.lists[m.id];
+  const st = listStatus(list);
+  const badgeClass = st==='open'?'badge-open':st==='closed'?'badge-closed':st==='computed'?'badge-computed':'badge-setup';
+  const badgeText = st==='open'?'Aperta':st==='closed'?'Chiusa':st==='computed'?'Assegnata':'Da configurare';
+  return `
+  <div class="list-card">
+    <h3>${esc(list.label)} <span><span class="badge ${badgeClass}">${badgeText}</span></span></h3>
+    <div class="players-count" style="margin-bottom:10px;">${list.players.length} giocatori caricati</div>
+    <div class="row-flex">
+      <div class="field" style="max-width:260px;">
+        <label>Carica file giocatori (.txt)</label>
+        <input type="file" accept=".txt" data-players-file="${m.id}">
+      </div>
+      <div class="field">
+        <label>Apertura</label>
+        <input type="datetime-local" data-open="${m.id}" value="${list.openAt?toLocalInput(list.openAt):''}">
+      </div>
+      <div class="field">
+        <label>Chiusura</label>
+        <input type="datetime-local" data-close="${m.id}" value="${list.closeAt?toLocalInput(list.closeAt):''}">
+      </div>
+      <button class="btn-secondary" data-save-times="${m.id}">Salva orari</button>
+    </div>
+    <div class="row-flex" style="margin-top:8px;">
+      <div class="field" style="max-width:140px;">
+        <label>Apri per (min)</label>
+        <input type="number" min="1" value="60" data-quick-min="${m.id}">
+      </div>
+      <button class="btn-secondary" data-quick-open="${m.id}">Apri ora</button>
+      <button class="btn-small" data-close-now="${m.id}">Chiudi ora</button>
+    </div>
+    ${list.players.length>0 ? `<details style="margin-top:10px;"><summary style="cursor:pointer;font-size:12px;color:var(--ink-soft);">Vedi elenco giocatori</summary>
+      <table style="margin-top:8px;"><tr><th>Nome</th><th>Offerta minima</th></tr>
+      ${list.players.map(p=>`<tr><td>${esc(p.name)}</td><td class="mono">${fmtCredits(p.minBid)}</td></tr>`).join('')}
+      </table></details>`:''}
+  </div>`;
+}
+
+function renderAdminListeAperte(){
+  return `
+  <div class="panel">
+    <p class="desc">Carica il listone per ciascun round (formato <span class="mono">NomeGiocatore;OffertaMinima;Ruolo</span>, dove Ruolo è D, C o A — una riga per giocatore). Ogni utente indica fino a 6 preferenze senza ordine: in caso di richieste multiple sullo stesso giocatore vince l'offerta più alta. La somma delle offerte non può superare i crediti dell'utente.</p>
+  </div>
+  ${renderOpenListSetupCard(OPEN_LISTS_META[0])}
+  <div class="panel" style="text-align:center;">
+    <button class="btn-secondary" id="btn-gen-round2">Genera lista round 2 dai giocatori non assegnati nel round 1</button>
+  </div>
+  ${renderOpenListSetupCard(OPEN_LISTS_META[1])}
+  `;
+}
+
+function renderOpenListSetupCard(m){
+  const list = state.lists[m.id];
+  const st = listStatus(list);
+  const badgeClass = st==='open'?'badge-open':st==='closed'?'badge-closed':st==='computed'?'badge-computed':'badge-setup';
+  const badgeText = st==='open'?'Aperta':st==='closed'?'Chiusa':st==='computed'?'Assegnata':'Da configurare';
+  return `
+  <div class="list-card">
+    <h3>${esc(list.label)} <span><span class="badge ${badgeClass}">${badgeText}</span></span></h3>
+    <div class="players-count" style="margin-bottom:10px;">${list.players.length} giocatori nel listone</div>
+    <div class="row-flex">
+      <div class="field" style="max-width:280px;">
+        <label>Carica listone (.txt, nome;offerta;ruolo)</label>
+        <input type="file" accept=".txt" data-open-players-file="${m.id}">
+      </div>
+      <div class="field">
+        <label>Apertura</label>
+        <input type="datetime-local" data-open="${m.id}" value="${list.openAt?toLocalInput(list.openAt):''}">
+      </div>
+      <div class="field">
+        <label>Chiusura</label>
+        <input type="datetime-local" data-close="${m.id}" value="${list.closeAt?toLocalInput(list.closeAt):''}">
+      </div>
+      <button class="btn-secondary" data-save-times="${m.id}">Salva orari</button>
+    </div>
+    <div class="row-flex" style="margin-top:8px;">
+      <div class="field" style="max-width:140px;">
+        <label>Apri per (min)</label>
+        <input type="number" min="1" value="60" data-quick-min="${m.id}">
+      </div>
+      <button class="btn-secondary" data-quick-open="${m.id}">Apri ora</button>
+      <button class="btn-small" data-close-now="${m.id}">Chiudi ora</button>
+      <button class="btn-primary" style="width:auto;" data-compute-open="${m.id}" ${list.players.length===0?'disabled':''}>${list.status==='computed'?'Ricalcola assegnazione':'Calcola assegnazione'}</button>
+    </div>
+    ${list.players.length>0 ? `<details style="margin-top:10px;"><summary style="cursor:pointer;font-size:12px;color:var(--ink-soft);">Vedi listone</summary>
+      <table style="margin-top:8px;"><tr><th>Nome</th><th>Offerta minima</th><th>Ruolo</th></tr>
+      ${list.players.map(p=>`<tr><td>${esc(p.name)}</td><td class="mono">${fmtCredits(p.minBid)}</td><td>${esc(p.role||'')}</td></tr>`).join('')}
+      </table></details>`:''}
+    ${list.status==='computed' && list.assigned ? `<table style="margin-top:14px;">
+      <tr><th>Utente</th><th>Giocatore</th><th>Prezzo</th></tr>
+      ${Object.entries(list.assigned).flatMap(([u,arr])=>arr.map(a=>`<tr><td>${esc(u)}</td><td>${esc(a.player)}</td><td class="mono">${fmtCredits(a.price)}</td></tr>`)).join('')}
+    </table>`:''}
+  </div>`;
+}
+
+function renderAdminCompletamento(){
+  const ready = state.lists.OPEN1.status==='computed' && state.lists.OPEN2.status==='computed';
+  const players = state.users.filter(u=>u.role!=='admin');
+  const manual = state.manualAssignments || {};
+  const manualRows = Object.entries(manual).flatMap(([u,arr])=>(arr||[]).map(a=>({u,...a})));
+  return `
+  <div class="panel">
+    <h2>Assegnazioni manuali</h2>
+    <p class="desc">Aggiungi a mano dei giocatori a squadre specifiche prima del completamento rose (es. accordi/scambi extra). Il prezzo viene scalato subito dai crediti dell'utente e il ruolo viene conteggiato nelle quote, così il completamento rose non riassegna né quel giocatore né quel ruolo se già coperto.</p>
+    <div class="row-flex">
+      <div class="field"><label>Utente</label>
+        <select id="ma-user">${players.map(u=>`<option value="${esc(u.username)}">${esc(u.username)}</option>`).join('')}</select>
+      </div>
+      <div class="field"><label>Giocatore</label><input type="text" id="ma-player" placeholder="Nome giocatore"></div>
+      <div class="field" style="max-width:170px;"><label>Ruolo</label>
+        <select id="ma-role">
+          <option value="P">Portiere</option>
+          <option value="D">Difensore</option>
+          <option value="C">Centrocampista</option>
+          <option value="A">Attaccante</option>
+        </select>
+      </div>
+      <div class="field" style="max-width:120px;"><label>Prezzo</label><input type="number" id="ma-price" value="0" min="0"></div>
+      <button class="btn-primary" style="width:auto;" id="btn-add-manual">Aggiungi</button>
+    </div>
+    ${manualRows.length===0?'<p class="empty-note">Nessuna assegnazione manuale ancora inserita.</p>':`
+    <table>
+      <tr><th>Utente</th><th>Giocatore</th><th>Ruolo</th><th>Prezzo</th><th></th></tr>
+      ${manualRows.map(r=>`
+        <tr>
+          <td>${esc(r.u)}</td><td>${esc(r.player)}</td><td>${esc(ROLE_LABEL[r.role]||r.role)}</td>
+          <td class="mono">${fmtCredits(r.price)}</td>
+          <td><button class="btn-secondary" data-del-manual="${esc(r.id)}" data-del-manual-user="${esc(r.u)}">Rimuovi</button></td>
+        </tr>`).join('')}
+    </table>`}
+  </div>
+  <div class="panel">
+    <h2>Completamento rose</h2>
+    <p class="desc">Da usare dopo i due round di lista aperta (e dopo eventuali assegnazioni manuali). Copre i ruoli mancanti (8 difensori, 8 centrocampisti, 4 attaccanti per utente) usando i giocatori del listone rimasti scoperti, in ordine di quotazione, assegnandoli sempre a chi ha più crediti residui. Ogni assegnazione costa il doppio della quotazione, e la classifica dei crediti si ricalcola prima di ogni assegnazione. Se l'asta di riparazione è già stata calcolata, il pool include anche i suoi svincolati rimasti (i giocatori del listone di riparazione senza offerte): rilancia questo completamento dopo l'asta di riparazione per assegnarli.</p>
+    <button class="btn-primary" style="width:auto;" id="btn-completa-rose" ${ready?'':'disabled'}>${state.squadCompletion?'Ricalcola completamento':'Completa rose'}</button>
+    ${!ready?`<p class="hint">Calcola prima l'assegnazione di round 1 e round 2.</p>`:''}
+  </div>
+  ${state.squadCompletion ? `
+  <div class="panel">
+    <h2>Risultato</h2>
+    <table>
+      <tr><th>Utente</th><th>Giocatore</th><th>Ruolo</th><th>Prezzo</th></tr>
+      ${Object.entries(state.squadCompletion.assigned).flatMap(([u,arr])=>arr.map(a=>`
+        <tr><td>${esc(u)}</td><td>${esc(a.player)}</td><td>${esc(ROLE_LABEL[a.role]||a.role)}</td><td class="mono">${fmtCredits(a.price)}</td></tr>
+      `)).join('')}
+    </table>
+  </div>`:''}
+  `;
+}
+
+function renderAdminRiparazione(){
+  const list = state.lists.REPAIR;
+  const st = listStatus(list);
+  const badgeClass = st==='open'?'badge-open':st==='closed'?'badge-closed':st==='computed'?'badge-computed':'badge-setup';
+  const badgeText = st==='open'?'Aperta':st==='closed'?'Chiusa':st==='computed'?'Assegnata':'Da configurare';
+  const pending = (state.repairListings||[]).filter(l=>!l.resolved && !list.players.some(p=>p.name===l.player));
+  const resolved = (state.repairListings||[]).filter(l=>l.resolved).sort((a,b)=> new Date(b.addedAt)-new Date(a.addedAt)).slice(0,30);
+  const win = (state.config && state.config.repairWindow) || {openAt:null, closeAt:null};
+  const winSt = timeWindowStatus(win);
+  const winBadgeClass = winSt==='open'?'badge-open':winSt==='closed'?'badge-closed':'badge-setup';
+  const winBadgeText = winSt==='open'?'Aperta':winSt==='closed'?'Chiusa':'Da configurare';
+  return `
+  <div class="panel">
+    <h2>Finestra per gli svincoli <span class="badge ${winBadgeClass}" style="margin-left:8px;">${winBadgeText}</span></h2>
+    <p class="desc">Il pulsante "Svincola" (in Panchina) è visibile agli utenti solo durante questa finestra: fuori da questi orari nessuno può mettere giocatori all'asta di riparazione. Non riguarda invece la finestra di offerta del listone qui sotto, che resta impostata separatamente.</p>
+    <div class="row-flex">
+      <div class="field">
+        <label>Apertura</label>
+        <input type="datetime-local" id="repairwin-open" value="${win.openAt?toLocalInput(win.openAt):''}">
+      </div>
+      <div class="field">
+        <label>Chiusura</label>
+        <input type="datetime-local" id="repairwin-close" value="${win.closeAt?toLocalInput(win.closeAt):''}">
+      </div>
+      <button class="btn-secondary" id="btn-save-repairwin">Salva orari</button>
+    </div>
+    <div class="row-flex" style="margin-top:8px;">
+      <div class="field" style="max-width:140px;">
+        <label>Apri per (min)</label>
+        <input type="number" min="1" value="60" id="repairwin-quick-min">
+      </div>
+      <button class="btn-secondary" id="btn-quick-open-repairwin">Apri ora</button>
+      <button class="btn-small" id="btn-close-now-repairwin">Chiudi ora</button>
+    </div>
+  </div>
+  <div class="panel">
+    <h2>Carica svincolati esterni (nuovi arrivi Serie A)</h2>
+    <p class="desc">Carica un file .txt con giocatori da aggiungere al listone dell'asta di riparazione anche se non arrivano dalla panchina di nessun utente (es. nuovi tesseramenti in Serie A prima dell'asta). Formato <span class="mono">NomeGiocatore;OffertaMinima;Ruolo</span> (Ruolo: P, D, C o A), una riga per giocatore. I giocatori già presenti nel listone (per nome) vengono ignorati.</p>
+    <input type="file" accept=".txt" id="repair-external-file">
+  </div>
+  <div class="panel">
+    <h2>Importa rose complete aggiornate</h2>
+    <p class="desc">Carica un file Excel nello stesso formato dell'export dell'app (un blocco di 3 colonne per squadra: nome, costo, vuota — righe = giocatori, terminate da "totale"). Diventa la nuova fonte di verità per la rosa di ciascun utente, al posto di quella calcolata automaticamente dalle liste: usalo se hai corretto a mano le assegnazioni durante il completamento rose.</p>
+    <input type="file" accept=".xlsx" id="roster-import-file">
+    ${state.rosterImport ? renderRosterImportPreview() : ''}
+    <p class="hint" style="margin-top:10px;">${state.finalRosters ? `Rose aggiornate caricate${state.finalRostersUpdatedAt ? ' il ' + esc(formatBackupDate(state.finalRostersUpdatedAt)) : ''}.` : 'Nessuna rosa importata: le rose sono ancora calcolate automaticamente dalle liste.'}</p>
+  </div>
+  <div class="panel">
+    <h2>Nomine in attesa</h2>
+    <p class="desc">Giocatori che gli utenti hanno messo all'asta di riparazione (crediti già restituiti al proprietario) ma non ancora inseriti nel listone del round corrente.</p>
+    ${pending.length===0 ? '<p class="empty-note">Nessuna nomina in attesa.</p>' : `
+    <table><tr><th>Utente</th><th>Giocatore</th><th>Base d'asta</th><th>Ruolo</th></tr>
+      ${pending.map(l=>`<tr><td>${esc(l.username)}</td><td>${esc(l.player)}</td><td class="mono">${fmtCredits(l.minBid)}</td><td>${esc(ROLE_LABEL[l.role]||l.role||'')}</td></tr>`).join('')}
+    </table>`}
+    <button class="btn-primary" style="width:auto;margin-top:12px;" id="btn-add-repair-nominations" ${pending.length===0?'disabled':''}>Aggiungi le nomine in attesa al listone (${pending.length})</button>
+  </div>
+  <div class="list-card">
+    <h3>${esc(list.label)} <span><span class="badge ${badgeClass}">${badgeText}</span></span></h3>
+    <div class="players-count" style="margin-bottom:10px;">${list.players.length} giocatori nel listone</div>
+    <div class="row-flex">
+      <div class="field">
+        <label>Apertura</label>
+        <input type="datetime-local" data-open="REPAIR" value="${list.openAt?toLocalInput(list.openAt):''}">
+      </div>
+      <div class="field">
+        <label>Chiusura</label>
+        <input type="datetime-local" data-close="REPAIR" value="${list.closeAt?toLocalInput(list.closeAt):''}">
+      </div>
+      <button class="btn-secondary" data-save-times="REPAIR">Salva orari</button>
+    </div>
+    <div class="row-flex" style="margin-top:8px;">
+      <div class="field" style="max-width:140px;">
+        <label>Apri per (min)</label>
+        <input type="number" min="1" value="60" data-quick-min="REPAIR">
+      </div>
+      <button class="btn-secondary" data-quick-open="REPAIR">Apri ora</button>
+      <button class="btn-small" data-close-now="REPAIR">Chiudi ora</button>
+      <button class="btn-primary" style="width:auto;" id="btn-compute-repair" ${list.players.length===0?'disabled':''}>${list.status==='computed'?'Ricalcola assegnazione':'Calcola assegnazione'}</button>
+    </div>
+    ${list.players.length>0 ? `<details style="margin-top:10px;"><summary style="cursor:pointer;font-size:12px;color:var(--ink-soft);">Vedi listone</summary>
+      <table style="margin-top:8px;"><tr><th>Nome</th><th>Base d'asta</th><th>Ruolo</th><th>Da rosa di</th></tr>
+      ${list.players.map(p=>`<tr><td>${esc(p.name)}</td><td class="mono">${fmtCredits(p.minBid)}</td><td>${esc(ROLE_LABEL[p.role]||p.role||'')}</td><td>${esc(p.owner||'')}</td></tr>`).join('')}
+      </table></details>`:''}
+    ${list.status==='computed' && list.assigned ? `<table style="margin-top:14px;">
+      <tr><th>Utente</th><th>Giocatore</th><th>Prezzo</th></tr>
+      ${Object.entries(list.assigned).flatMap(([u,arr])=>arr.map(a=>`<tr><td>${esc(u)}</td><td>${esc(a.player)}</td><td class="mono">${fmtCredits(a.price)}</td></tr>`)).join('')}
+    </table>`:''}
+    ${list.status==='computed' ? `<p class="hint" style="margin-top:10px;">Assegnazione calcolata: i giocatori del listone rimasti senza offerte sono svincolati. Vai su "Completamento rose" e lancia di nuovo il completamento per assegnarli a chi ha ancora bisogno di quel ruolo.</p>` : ''}
+  </div>
+  ${resolved.length>0 ? `
+  <div class="panel">
+    <h2>Storico nomine risolte</h2>
+    <table><tr><th>Proprietario</th><th>Giocatore</th><th>Esito</th></tr>
+      ${resolved.map(l=>`<tr><td>${esc(l.username)}</td><td>${esc(l.player)}</td><td>${l.wonBy?`Vinto da ${esc(l.wonBy)} (${fmtCredits(l.finalPrice)})`:'Invenduto, svincolato (disponibile per il completamento rose)'}</td></tr>`).join('')}
+    </table>
+  </div>`:''}
+  `;
+}
+
+function renderRosterImportPreview(){
+  const nonAdminUsers = state.users.filter(u=>u.role!=='admin');
+  const roleCounts = players => {
+    const c = {P:0,D:0,C:0,A:0};
+    players.forEach(p=>{ if(c[p.role]!=null) c[p.role]++; });
+    const unknown = players.filter(p=>!c.hasOwnProperty(p.role) || !p.role).length;
+    return `P:${c.P} D:${c.D} C:${c.C} A:${c.A}${unknown?` <span style="color:var(--coral);">(${unknown} senza ruolo)</span>`:''}`;
+  };
+  return `<div class="list-card" style="margin-top:14px;">
+    <h3>Anteprima import (${state.rosterImport.teams.length} squadre trovate nel file)</h3>
+    <table>
+      <tr><th>Nome nel file</th><th>Utente app</th><th>Giocatori</th><th>Ruoli</th></tr>
+      ${state.rosterImport.teams.map((t,i)=>`
+        <tr>
+          <td>${esc(t.excelName)}</td>
+          <td><select data-import-map-idx="${i}">
+            <option value="">-- ignora --</option>
+            ${nonAdminUsers.map(u=>`<option value="${esc(u.username)}" ${t.username===u.username?'selected':''}>${esc(u.username)}</option>`).join('')}
+          </select></td>
+          <td>${t.players.length}</td>
+          <td style="font-family:'Roboto Mono',monospace;font-size:12px;">${roleCounts(t.players)}</td>
+        </tr>`).join('')}
+    </table>
+    <div class="modal-actions" style="justify-content:flex-start;margin-top:14px;">
+      <button class="btn-primary" style="width:auto;" id="btn-confirm-roster-import">Conferma import</button>
+      <button class="btn-secondary" id="btn-cancel-roster-import">Annulla</button>
+    </div>
+  </div>`;
+}
+
+function toLocalInput(iso){
+  const d = new Date(iso);
+  const pad = n=>String(n).padStart(2,'0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function listStatus(list){
+  if(list.status==='computed') return 'computed';
+  const now = Date.now();
+  if(list.openAt && list.closeAt){
+    const o = new Date(list.openAt).getTime(), c = new Date(list.closeAt).getTime();
+    if(now < o) return 'setup';
+    if(now >= o && now < c) return 'open';
+    if(now >= c) return 'closed';
+  }
+  return 'setup';
+}
+
+// Stato di una generica finestra temporale {openAt, closeAt} (usata per la
+// finestra in cui gli utenti possono svincolare giocatori all'asta di
+// riparazione). 'setup' = non ancora configurata o non ancora iniziata.
+function timeWindowStatus(win){
+  if(!win || !win.openAt || !win.closeAt) return 'setup';
+  const now = Date.now();
+  const o = new Date(win.openAt).getTime(), c = new Date(win.closeAt).getTime();
+  if(now < o) return 'setup';
+  if(now >= o && now < c) return 'open';
+  return 'closed';
+}
+
+function isRepairWindowOpen(){
+  return timeWindowStatus(state.config && state.config.repairWindow) === 'open';
+}
+
+function renderAdminCrediti(){
+  const players = state.users.filter(u=>u.role!=='admin');
+  return `
+  <div class="panel">
+    <h2>Crediti iniziali</h2>
+    <p class="desc">Imposta il monte crediti di partenza e assegnalo a tutti i partecipanti (sovrascrive i crediti attuali).</p>
+    <div class="row-flex">
+      <div class="field" style="max-width:180px;"><label>Crediti iniziali</label><input type="number" id="init-credits" value="${state.config.initialCredits}"></div>
+      <button class="btn-primary" style="width:auto;" id="btn-set-initial">Assegna a tutti</button>
+    </div>
+  </div>
+  <div class="panel">
+    <h2>Top up</h2>
+    <p class="desc">Aggiungi crediti extra a tutti i partecipanti (es. prima di aprire una nuova lista).</p>
+    <div class="row-flex">
+      <div class="field" style="max-width:180px;"><label>Crediti da aggiungere</label><input type="number" id="topup-credits" value="0"></div>
+      <button class="btn-secondary" id="btn-topup">Aggiungi a tutti</button>
+    </div>
+  </div>
+  <div class="panel">
+    <h2>Crediti residui</h2>
+    ${players.length===0?'<p class="empty-note">Nessun utente.</p>':`
+    <table><tr><th>Utente</th><th>Crediti</th><th></th></tr>
+    ${players.map(u=>`
+      <tr>
+        <td>${esc(u.username)}</td>
+        <td class="mono ${u.credits<0?'credit-neg':''}">${fmtCredits(u.credits)}</td>
+        <td><input type="number" style="width:90px;padding:5px 8px;border:1px solid var(--line);border-radius:4px;" data-set-credit="${esc(u.username)}" value="${u.credits}"></td>
+      </tr>`).join('')}
+    </table>`}
+  </div>`;
+}
+
+function renderAdminMonitoraggio(){
+  return `
+  ${LISTS_META.map(m=>{
+    const list = state.lists[m.id];
+    const st = listStatus(list);
+    if(list.players.length===0){
+      return `<div class="list-card"><h3>${esc(list.label)}</h3><p class="empty-note">Nessun giocatore ancora caricato per questa lista.</p></div>`;
+    }
+    if(list.status==='computed'){
+      return `<div class="list-card"><h3>${esc(list.label)} <span class="badge badge-computed">Assegnata</span></h3><p class="empty-note">Assegnazione già definitiva: vedi la scheda Assegnazioni.</p></div>`;
+    }
+    const {assignment, unassignedUsers} = buildAssignmentPreview(m.id);
+    const players = state.users.filter(u=>u.role!=='admin');
+    const submittedCount = players.filter(u=>{ const s=state.submissions[m.id]; return s && s[u.username] && s[u.username].length===6; }).length;
+    return `
+    <div class="list-card">
+      <h3>${esc(list.label)} <span class="badge ${st==='open'?'badge-open':st==='closed'?'badge-closed':'badge-setup'}">${st==='open'?'Aperta':st==='closed'?'Chiusa':'Non ancora'}</span></h3>
+      <div class="players-count" style="margin-bottom:10px;">${submittedCount}/${players.length} hanno compilato</div>
+      ${Object.keys(assignment).length===0 ? '<p class="empty-note">Nessuna offerta ancora vincente.</p>' : `
+      <table>
+        <tr><th>Utente</th><th>Giocatore in testa</th><th>Offerta</th><th>Preferenza</th></tr>
+        ${Object.entries(assignment).map(([u,a])=>`<tr><td>${esc(u)}</td><td>${esc(a.player)}</td><td class="mono">${fmtCredits(a.price)}</td><td>#${a.round}</td></tr>`).join('')}
+      </table>`}
+      ${unassignedUsers.length>0 ? `<p class="empty-note" style="margin-top:10px;">Ancora senza un'offerta vincente: ${unassignedUsers.map(esc).join(', ')}</p>`:''}
+    </div>`;
+  }).join('')}
+  `;
+}
+
+function renderAdminAssegnazioni(){
+  return LISTS_META.map(m=>{
+    const list = state.lists[m.id];
+    const st = listStatus(list);
+    const players = state.users.filter(u=>u.role!=='admin');
+    const subs = state.submissions[m.id] || {};
+    const submitted = players.filter(u=>subs[u.username] && subs[u.username].length===6).length;
+    return `
+    <div class="list-card">
+      <h3>${esc(list.label)} <span class="badge ${st==='computed'?'badge-computed':st==='open'?'badge-open':st==='closed'?'badge-closed':'badge-setup'}">${st==='computed'?'Assegnata':st==='open'?'Aperta':st==='closed'?'Chiusa':'Non ancora'}</span></h3>
+      <div class="players-count" style="margin-bottom:10px;">${list.players.length===0?'Nessun giocatore caricato — ':''}${submitted}/${players.length} utenti hanno compilato</div>
+      <div class="row-flex">
+        <button class="btn-primary" style="width:auto;" data-compute="${m.id}" ${list.players.length===0||players.length===0?'disabled':''}>${list.status==='computed'?'Ricalcola assegnazione':'Calcola assegnazione'}</button>
+      </div>
+      ${list.status==='computed' ? `
+      <table style="margin-top:14px;">
+        <tr><th>Utente</th><th>Giocatore</th><th>Prezzo</th><th>Da preferenza</th></tr>
+        ${Object.entries(list.assigned).map(([u,a])=>`
+          <tr><td>${esc(u)}</td><td>${esc(a.player)}</td><td class="mono">${fmtCredits(a.price)}</td><td>${a.round==='random'?'Assegnazione casuale':'#'+a.round}</td></tr>
+        `).join('')}
+      </table>`:''}
+    </div>`;
+  }).join('');
+}
+
+function renderAdminExport(){
+  return `
+  <div class="panel">
+    <h2>Esporta risultati</h2>
+    <button class="btn-primary" style="width:auto;" id="btn-export">Scarica risultati (.xlsx)</button>
+  </div>`;
+}
+
+function attachAdminHandlers(){
+  document.querySelectorAll('.tab-btn').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      state.adminTab = b.dataset.tab;
+      if(state.adminTab==='backup') loadBackupsList().then(render);
+      render();
+    });
+  });
+
+  const confirmAnomalyBtn = document.getElementById('btn-confirm-anomaly-restore');
+  if(confirmAnomalyBtn) confirmAnomalyBtn.addEventListener('click', async ()=>{
+    if(!confirm('Salvare permanentemente questo backup sui dati live? Sostituirà i documenti mancanti.')) return;
+    await persistAllDocs();
+    state.dataAnomaly = null;
+    showToast('Backup confermato e salvato.');
+    render();
+  });
+  const gotoBackupBtn = document.getElementById('btn-goto-backup-tab');
+  if(gotoBackupBtn) gotoBackupBtn.addEventListener('click', ()=>{
+    state.adminTab = 'backup';
+    loadBackupsList().then(render);
+    render();
+  });
+
+  const dlBackupBtn = document.getElementById('btn-download-backup');
+  if(dlBackupBtn) dlBackupBtn.addEventListener('click', ()=>{
+    const payload = {exportedAt: new Date().toISOString(), ...snapshotState()};
+    const blob = new Blob([JSON.stringify(payload,null,2)], {type:'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `fantacalcio_backup_${Date.now()}.json`;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  });
+  const importBackupInput = document.getElementById('input-import-backup');
+  if(importBackupInput) importBackupInput.addEventListener('change', async ()=>{
+    const file = importBackupInput.files[0];
+    if(!file) return;
+    if(!confirm('Importare questo file sovrascriverà TUTTI i dati attuali (utenti, liste, offerte, assegnazioni). Continuare?')){ importBackupInput.value=''; return; }
+    try{
+      const data = JSON.parse(await file.text());
+      applyBackupData(data);
+      await persistAllDocs();
+      state.dataAnomaly = null;
+      showToast('Backup importato e salvato.');
+      render();
+    }catch(e){ showToast('File non valido: ' + (e && e.message || e)); }
+  });
+  document.querySelectorAll('[data-restore-backup]').forEach(b=>{
+    b.addEventListener('click', async ()=>{
+      if(!confirm('Ripristinare questo backup sovrascriverà TUTTI i dati attuali. Continuare?')) return;
+      await restoreFromBackupDoc(b.dataset.restoreBackup);
+    });
+  });
+  const forceEmptyBtn = document.getElementById('btn-force-empty-init');
+  if(forceEmptyBtn) forceEmptyBtn.addEventListener('click', async ()=>{
+    if(!confirm('Questo cancellerà definitivamente i dati mostrati ora (che provengono da un backup) e inizializzerà tutto vuoto. Sei sicuro?')) return;
+    applyBackupData(null); // riporta tutto ai valori di default
+    await persistAllDocs();
+    state.dataAnomaly = null;
+    showToast('Inizializzato vuoto.');
+    render();
+  });
+
+  const importPrefFileInput = document.getElementById('pref-import-file');
+  if(importPrefFileInput) importPrefFileInput.addEventListener('change', async ()=>{
+    const file = importPrefFileInput.files[0];
+    if(!file) return;
+    document.getElementById('pref-import-text').value = await file.text();
+  });
+  const importPrefBtn = document.getElementById('btn-import-preferences');
+  if(importPrefBtn) importPrefBtn.addEventListener('click', async ()=>{
+    const text = document.getElementById('pref-import-text').value;
+    if(!text.trim()){ showToast('Incolla o carica prima il contenuto.'); return; }
+    const result = await importPreferencesFromText(text);
+    state.prefImportResult = result;
+    if(result.okCount>0){
+      await Promise.all([persistSubs(), persistLists()]);
+      showToast(`${result.okCount} preferenze importate.`);
+    } else {
+      showToast('Nessuna preferenza valida trovata nel file.');
+    }
+    render();
+  });
+  const exportPrefBtn = document.getElementById('btn-export-preferences');
+  if(exportPrefBtn) exportPrefBtn.addEventListener('click', exportPreferencesCSV);
+
+  const changeAdminPassBtn = document.getElementById('btn-change-admin-pass');
+  if(changeAdminPassBtn) changeAdminPassBtn.addEventListener('click', async ()=>{
+    const cur = document.getElementById('ap-current').value;
+    const nw = document.getElementById('ap-new').value;
+    const conf = document.getElementById('ap-confirm').value;
+    const me = currentUserObj();
+    state.adminPassError = '';
+    if(!cur || !nw || !conf){ state.adminPassError = 'Compila tutti i campi.'; render(); return; }
+    if(me.password !== cur){ state.adminPassError = 'La password attuale non è corretta.'; render(); return; }
+    if(nw.length < 4){ state.adminPassError = 'La nuova password deve avere almeno 4 caratteri.'; render(); return; }
+    if(nw !== conf){ state.adminPassError = 'Le due password non coincidono.'; render(); return; }
+    me.password = nw;
+    await persistUsers();
+    state.adminPassError = '';
+    showToast('Password amministratore aggiornata.');
+    render();
+  });
+  const addUserBtn = document.getElementById('btn-add-user');
+  if(addUserBtn) addUserBtn.addEventListener('click', async ()=>{
+    const u = document.getElementById('nu-user').value.trim();
+    const p = document.getElementById('nu-pass').value.trim();
+    if(!u || !p){ showToast('Inserisci nome utente e password.'); return; }
+    if(state.users.find(x=>x.username===u)){ showToast('Utente già esistente.'); return; }
+    state.users.push({username:u, password:p, role:'user', credits:state.config.initialCredits});
+    await persistUsers();
+    showToast('Utente aggiunto.');
+    render();
+  });
+  const bulkBtn = document.getElementById('btn-bulk-users');
+  if(bulkBtn) bulkBtn.addEventListener('click', async ()=>{
+    const fileInput = document.getElementById('bulk-users-file');
+    let text = document.getElementById('bulk-users').value;
+    if(fileInput.files[0]) text = await fileInput.files[0].text();
+    const lines = text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+    let added = 0;
+    lines.forEach(line=>{
+      const parts = line.split(/[;,\t]/).map(s=>s.trim());
+      if(parts.length>=2 && parts[0]){
+        if(!state.users.find(x=>x.username===parts[0])){
+          state.users.push({username:parts[0], password:parts[1], role:'user', credits:state.config.initialCredits});
+          added++;
+        }
+      }
+    });
+    await persistUsers();
+    showToast(`${added} utenti importati.`);
+    render();
+  });
+  document.querySelectorAll('[data-del-user]').forEach(b=>{
+    b.addEventListener('click', async ()=>{
+      state.users = state.users.filter(u=>u.username!==b.dataset.delUser);
+      await persistUsers();
+      render();
+    });
+  });
+
+  document.querySelectorAll('[data-open-players-file]').forEach(inp=>{
+    inp.addEventListener('change', async ()=>{
+      const listId = inp.dataset.openPlayersFile;
+      const file = inp.files[0];
+      if(!file) return;
+      const text = await file.text();
+      const lines = text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+      const players = [];
+      lines.forEach(line=>{
+        const parts = line.split(/[;,\t]/).map(s=>s.trim());
+        const role = (parts[2]||'').toUpperCase();
+        if(parts.length>=3 && parts[0] && !isNaN(parseFloat(parts[1])) && ['D','C','A','P'].includes(role)){
+          players.push({name:parts[0], minBid:parseFloat(parts[1]), role});
+        }
+      });
+      state.lists[listId].players = players;
+      await persistLists();
+      showToast(`${players.length} giocatori caricati per ${state.lists[listId].label}.`);
+      render();
+    });
+  });
+
+  document.querySelectorAll('[data-compute-open]').forEach(b=>{
+    b.addEventListener('click', async ()=>{
+      await computeOpenAssignment(b.dataset.computeOpen);
+      showToast('Assegnazione calcolata.');
+      render();
+    });
+  });
+
+  const genRound2Btn = document.getElementById('btn-gen-round2');
+  if(genRound2Btn) genRound2Btn.addEventListener('click', async ()=>{
+    generateRound2FromRound1();
+    await persistLists();
+    showToast('Lista round 2 generata dai giocatori non assegnati.');
+    render();
+  });
+
+  const completaBtn = document.getElementById('btn-completa-rose');
+  if(completaBtn) completaBtn.addEventListener('click', async ()=>{
+    await computeSquadCompletion();
+    showToast('Rose completate.');
+    render();
+  });
+
+  const addManualBtn = document.getElementById('btn-add-manual');
+  if(addManualBtn) addManualBtn.addEventListener('click', async ()=>{
+    const username = document.getElementById('ma-user').value;
+    const player = document.getElementById('ma-player').value.trim();
+    const role = document.getElementById('ma-role').value;
+    const price = parseFloat(document.getElementById('ma-price').value);
+    if(!username){ showToast('Seleziona un utente.'); return; }
+    if(!player){ showToast('Inserisci il nome del giocatore.'); return; }
+    if(isNaN(price) || price < 0){ showToast('Prezzo non valido.'); return; }
+    const usr = state.users.find(u=>u.username===username);
+    if(!usr){ showToast('Utente non trovato.'); return; }
+    if(!state.manualAssignments) state.manualAssignments = {};
+    if(!state.manualAssignments[username]) state.manualAssignments[username] = [];
+    usr.credits -= price;
+    state.manualAssignments[username].push({id: uid(), player, price, role});
+    await persistManualAssignments();
+    await persistUsers();
+    showToast('Assegnazione manuale aggiunta.');
+    render();
+  });
+
+  document.querySelectorAll('[data-del-manual]').forEach(b=>{
+    b.addEventListener('click', async ()=>{
+      const username = b.dataset.delManualUser;
+      const id = b.dataset.delManual;
+      const arr = state.manualAssignments[username] || [];
+      const entry = arr.find(a=>a.id===id);
+      if(entry){
+        const usr = state.users.find(u=>u.username===username);
+        if(usr) usr.credits += entry.price;
+      }
+      state.manualAssignments[username] = arr.filter(a=>a.id!==id);
+      await persistManualAssignments();
+      await persistUsers();
+      showToast('Assegnazione manuale rimossa.');
+      render();
+    });
+  });
+
+  const rosterImportFile = document.getElementById('roster-import-file');
+  if(rosterImportFile) rosterImportFile.addEventListener('change', async ()=>{
+    const file = rosterImportFile.files[0];
+    if(!file) return;
+    try{
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, {type:'array'});
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const grid = XLSX.utils.sheet_to_json(ws, {header:1, defval:null});
+      const teams = parseRosterGrid(grid);
+      const nonAdminUsers = state.users.filter(u=>u.role!=='admin');
+      teams.forEach(t=>{
+        const guess = nonAdminUsers.find(u=>u.username.toLowerCase()===t.excelName.toLowerCase());
+        t.username = guess ? guess.username : '';
+      });
+      state.rosterImport = {teams};
+      showToast(`${teams.length} squadre trovate nel file.`);
+      render();
+    }catch(e){
+      showToast('File non valido: ' + (e && e.message || e));
+    }
+  });
+
+  document.querySelectorAll('[data-import-map-idx]').forEach(sel=>{
+    sel.addEventListener('change', ()=>{
+      const idx = parseInt(sel.dataset.importMapIdx);
+      state.rosterImport.teams[idx].username = sel.value;
+    });
+  });
+
+  const confirmImportBtn = document.getElementById('btn-confirm-roster-import');
+  if(confirmImportBtn) confirmImportBtn.addEventListener('click', async ()=>{
+    const mapped = state.rosterImport.teams.filter(t=>t.username);
+    if(mapped.length===0){ showToast('Associa almeno una squadra a un utente prima di confermare.'); return; }
+    if(!confirm(`Questo sostituirà la rosa di ${mapped.length} utenti con quella del file. Continuare?`)) return;
+    const newRosters = {...(state.finalRosters||{})};
+    mapped.forEach(t=>{ newRosters[t.username] = t.players.map(p=>({player:p.name, price:p.price, role:p.role||''})); });
+    state.finalRosters = newRosters;
+    state.finalRostersUpdatedAt = new Date().toISOString();
+    state.rosterImport = null;
+    await persistFinalRosters();
+    showToast('Rose aggiornate importate.');
+    render();
+  });
+  const cancelImportBtn = document.getElementById('btn-cancel-roster-import');
+  if(cancelImportBtn) cancelImportBtn.addEventListener('click', ()=>{ state.rosterImport = null; render(); });
+
+  const repairExternalFile = document.getElementById('repair-external-file');
+  if(repairExternalFile) repairExternalFile.addEventListener('change', async ()=>{
+    const file = repairExternalFile.files[0];
+    if(!file) return;
+    const text = await file.text();
+    const lines = text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+    const list = state.lists.REPAIR;
+    const existingNames = new Set(list.players.map(p=>p.name));
+    let added = 0, skipped = 0;
+    lines.forEach(line=>{
+      const parts = line.split(/[;,\t]/).map(s=>s.trim());
+      const role = (parts[2]||'').toUpperCase();
+      if(parts.length>=3 && parts[0] && !isNaN(parseFloat(parts[1])) && ['P','D','C','A'].includes(role)){
+        if(existingNames.has(parts[0])){ skipped++; return; }
+        list.players.push({name:parts[0], minBid:parseFloat(parts[1]), role, owner:null});
+        existingNames.add(parts[0]);
+        added++;
+      } else {
+        skipped++;
+      }
+    });
+    await persistLists();
+    showToast(`${added} giocatori aggiunti al listone di riparazione${skipped?` (${skipped} righe ignorate)`:''}.`);
+    repairExternalFile.value = '';
+    render();
+  });
+
+  const saveRepairWinBtn = document.getElementById('btn-save-repairwin');
+  if(saveRepairWinBtn) saveRepairWinBtn.addEventListener('click', async ()=>{
+    const o = document.getElementById('repairwin-open').value;
+    const c = document.getElementById('repairwin-close').value;
+    if(!state.config.repairWindow) state.config.repairWindow = {openAt:null, closeAt:null};
+    state.config.repairWindow.openAt = o ? new Date(o).toISOString() : null;
+    state.config.repairWindow.closeAt = c ? new Date(c).toISOString() : null;
+    await persistConfig();
+    showToast('Orari finestra svincoli salvati.');
+    render();
+  });
+  const quickOpenRepairWinBtn = document.getElementById('btn-quick-open-repairwin');
+  if(quickOpenRepairWinBtn) quickOpenRepairWinBtn.addEventListener('click', async ()=>{
+    const mins = parseInt(document.getElementById('repairwin-quick-min').value) || 60;
+    const now = new Date();
+    if(!state.config.repairWindow) state.config.repairWindow = {openAt:null, closeAt:null};
+    state.config.repairWindow.openAt = now.toISOString();
+    state.config.repairWindow.closeAt = new Date(now.getTime()+mins*60000).toISOString();
+    await persistConfig();
+    showToast('Finestra svincoli aperta.');
+    render();
+  });
+  const closeNowRepairWinBtn = document.getElementById('btn-close-now-repairwin');
+  if(closeNowRepairWinBtn) closeNowRepairWinBtn.addEventListener('click', async ()=>{
+    if(!state.config.repairWindow) state.config.repairWindow = {openAt:null, closeAt:null};
+    state.config.repairWindow.closeAt = new Date().toISOString();
+    await persistConfig();
+    showToast('Finestra svincoli chiusa.');
+    render();
+  });
+
+  const addNomBtn = document.getElementById('btn-add-repair-nominations');
+  if(addNomBtn) addNomBtn.addEventListener('click', async ()=>{
+    const added = addPendingNominationsToRepairList();
+    await persistLists();
+    showToast(`${added} nomine aggiunte al listone.`);
+    render();
+  });
+
+  const computeRepairBtn = document.getElementById('btn-compute-repair');
+  if(computeRepairBtn) computeRepairBtn.addEventListener('click', async ()=>{
+    await computeRepairAssignment();
+    showToast('Assegnazione asta di riparazione calcolata.');
+    render();
+  });
+
+  document.querySelectorAll('[data-players-file]').forEach(inp=>{
+    inp.addEventListener('change', async ()=>{
+      const listId = inp.dataset.playersFile;
+      const file = inp.files[0];
+      if(!file) return;
+      const text = await file.text();
+      const lines = text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+      const players = [];
+      lines.forEach(line=>{
+        const parts = line.split(/[;,\t]/).map(s=>s.trim());
+        if(parts.length>=2 && parts[0] && !isNaN(parseFloat(parts[1]))){
+          players.push({name:parts[0], minBid:parseFloat(parts[1])});
+        }
+      });
+      state.lists[listId].players = players;
+      await persistLists();
+      showToast(`${players.length} giocatori caricati per ${state.lists[listId].label}.`);
+      render();
+    });
+  });
+  document.querySelectorAll('[data-save-times]').forEach(b=>{
+    b.addEventListener('click', async ()=>{
+      const id = b.dataset.saveTimes;
+      const o = document.querySelector(`[data-open="${id}"]`).value;
+      const c = document.querySelector(`[data-close="${id}"]`).value;
+      state.lists[id].openAt = o ? new Date(o).toISOString() : null;
+      state.lists[id].closeAt = c ? new Date(c).toISOString() : null;
+      if(state.lists[id].status==='computed' && (o||c)) state.lists[id].status='setup';
+      await persistLists();
+      showToast('Orari salvati.');
+      render();
+    });
+  });
+  document.querySelectorAll('[data-quick-open]').forEach(b=>{
+    b.addEventListener('click', async ()=>{
+      const id = b.dataset.quickOpen;
+      const mins = parseInt(document.querySelector(`[data-quick-min="${id}"]`).value) || 60;
+      const now = new Date();
+      state.lists[id].openAt = now.toISOString();
+      state.lists[id].closeAt = new Date(now.getTime()+mins*60000).toISOString();
+      state.lists[id].status = 'setup';
+      await persistLists();
+      showToast('Lista aperta.');
+      render();
+    });
+  });
+  document.querySelectorAll('[data-close-now]').forEach(b=>{
+    b.addEventListener('click', async ()=>{
+      const id = b.dataset.closeNow;
+      state.lists[id].closeAt = new Date().toISOString();
+      await persistLists();
+      showToast('Lista chiusa.');
+      render();
+    });
+  });
+
+  const setInitBtn = document.getElementById('btn-set-initial');
+  if(setInitBtn) setInitBtn.addEventListener('click', async ()=>{
+    const val = parseFloat(document.getElementById('init-credits').value) || 0;
+    state.config.initialCredits = val;
+    state.users.forEach(u=>{ if(u.role!=='admin') u.credits = val; });
+    await persistConfig(); await persistUsers();
+    showToast('Crediti iniziali assegnati.');
+    render();
+  });
+  const topupBtn = document.getElementById('btn-topup');
+  if(topupBtn) topupBtn.addEventListener('click', async ()=>{
+    const val = parseFloat(document.getElementById('topup-credits').value) || 0;
+    state.users.forEach(u=>{ if(u.role!=='admin') u.credits += val; });
+    await persistUsers();
+    showToast('Top up applicato.');
+    render();
+  });
+  document.querySelectorAll('[data-set-credit]').forEach(inp=>{
+    inp.addEventListener('change', async ()=>{
+      const u = state.users.find(x=>x.username===inp.dataset.setCredit);
+      u.credits = parseFloat(inp.value) || 0;
+      await persistUsers();
+      showToast('Crediti aggiornati.');
+    });
+  });
+
+  document.querySelectorAll('[data-compute]').forEach(b=>{
+    b.addEventListener('click', async ()=>{
+      await computeAssignment(b.dataset.compute);
+      showToast('Assegnazione calcolata.');
+      render();
+    });
+  });
+
+  const exportBtn = document.getElementById('btn-export');
+  if(exportBtn) exportBtn.addEventListener('click', ()=>{
+    const players = state.users.filter(u=>u.role!=='admin');
+    // Include any list that actually has assignment data, regardless of its
+    // current status flag (e.g. an admin re-saving open/close times on an
+    // already-computed list resets status to "setup" but keeps the results).
+    const listsWithResults = LISTS_META.filter(m=>state.lists[m.id] && state.lists[m.id].assigned);
+
+    // Per-user flat list of every acquisto: le 9 liste a ruolo (0 o 1 giocatore
+    // ciascuna), le due liste aperte (0-6 giocatori ciascuna) e il
+    // completamento rose (più giocatori), tutti appiattiti riga per riga.
+    const perUser = {};
+    players.forEach(u=>{ perUser[u.username] = []; });
+
+    listsWithResults.forEach(m=>{
+      players.forEach(u=>{
+        const a = state.lists[m.id].assigned[u.username];
+        if(a && a.player) perUser[u.username].push({player:a.player, price:Number(a.price)||0});
+      });
+    });
+
+    OPEN_LISTS_META.forEach(m=>{
+      const list = state.lists[m.id];
+      if(!list || !list.assigned) return;
+      players.forEach(u=>{
+        (list.assigned[u.username]||[]).forEach(a=>{
+          perUser[u.username].push({player:a.player, price:Number(a.price)||0});
+        });
+      });
+    });
+
+    if(state.squadCompletion && state.squadCompletion.assigned){
+      players.forEach(u=>{
+        (state.squadCompletion.assigned[u.username]||[]).forEach(a=>{
+          perUser[u.username].push({player:a.player, price:Number(a.price)||0});
+        });
+      });
+    }
+
+    const grid = [];
+    const headerRow = [];
+    players.forEach(u=>{ headerRow.push(u.username, 'costo', ''); });
+    grid.push(headerRow);
+
+    const maxRows = Math.max(0, ...players.map(u=>perUser[u.username].length));
+    for(let i=0;i<maxRows;i++){
+      const row = [];
+      players.forEach(u=>{
+        const a = perUser[u.username][i];
+        row.push(a ? a.player : '', a ? a.price : '', '');
+      });
+      grid.push(row);
+    }
+
+    const totRow = [];
+    players.forEach(u=>{
+      const sum = perUser[u.username].reduce((s,a)=>s+a.price, 0);
+      totRow.push('totale', sum, '');
+    });
+    grid.push(totRow);
+
+    const ws = XLSX.utils.aoa_to_sheet(grid);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Rose');
+    XLSX.writeFile(wb, 'risultati_fantacalcio.xlsx');
+  });
+}
+
+function buildAssignmentPreview(listId){
+  const list = state.lists[listId];
+  const subs = state.submissions[listId] || {};
+  const allUsers = state.users.filter(u=>u.role!=='admin').map(u=>u.username);
+  let remainingPlayers = list.players.map(p=>p.name);
+  let unassigned = new Set(allUsers);
+  const assignment = {};
+  for(let round=0; round<6; round++){
+    const bidsByPlayer = {};
+    unassigned.forEach(u=>{
+      const arr = subs[u];
+      const pref = arr && arr[round];
+      if(pref && remainingPlayers.includes(pref.player)){
+        (bidsByPlayer[pref.player] = bidsByPlayer[pref.player]||[]).push({username:u, bid:pref.bid});
+      }
+    });
+    Object.entries(bidsByPlayer).forEach(([player, bidders])=>{
+      let winner;
+      if(bidders.length===1){ winner = bidders[0]; }
+      else{
+        const maxBid = Math.max(...bidders.map(b=>b.bid));
+        const top = bidders.filter(b=>b.bid===maxBid);
+        winner = top[Math.floor(Math.random()*top.length)];
+      }
+      assignment[winner.username] = {player, price: winner.bid, round: round+1};
+      unassigned.delete(winner.username);
+      remainingPlayers = remainingPlayers.filter(p=>p!==player);
+    });
+  }
+  return {assignment, unassignedUsers: Array.from(unassigned), remainingPlayers};
+}
+
+async function computeAssignment(listId){
+  const list = state.lists[listId];
+  const {assignment, unassignedUsers, remainingPlayers} = buildAssignmentPreview(listId);
+
+  const shuffled = remainingPlayers.slice();
+  for(let i=shuffled.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [shuffled[i],shuffled[j]]=[shuffled[j],shuffled[i]]; }
+  unassignedUsers.forEach((u,i)=>{
+    const player = shuffled[i];
+    const minBid = player ? (list.players.find(p=>p.name===player)?.minBid || 0) : 0;
+    assignment[u] = {player: player || 'Nessun giocatore disponibile', price: player?minBid:0, round:'random'};
+  });
+
+  const previouslyComputed = list.status==='computed' && list.assigned;
+  if(previouslyComputed){
+    Object.entries(list.assigned).forEach(([u,a])=>{
+      const usr = state.users.find(x=>x.username===u);
+      if(usr) usr.credits += a.price;
+    });
+  }
+  Object.entries(assignment).forEach(([u,a])=>{
+    const usr = state.users.find(x=>x.username===u);
+    if(usr) usr.credits -= a.price;
+  });
+
+  list.assigned = assignment;
+  list.status = 'computed';
+  await persistLists();
+  await persistUsers();
+}
+// ================= LISTE APERTE: ASSEGNAZIONE =================
+// Per ogni giocatore richiesto da più utenti vince l'offerta più alta,
+// indipendentemente dalla posizione occupata nelle 6 preferenze.
+// A differenza delle liste a ruolo, in una singola lista aperta un utente
+// può aggiudicarsi da 0 a 6 giocatori (uno per ciascuna preferenza vinta).
+function buildOpenAssignmentPreview(listId){
+  const list = state.lists[listId];
+  const subs = state.submissions[listId] || {};
+  const bidsByPlayer = {};
+  Object.entries(subs).forEach(([username, prefs])=>{
+    (prefs||[]).forEach(p=>{
+      if(!p || !p.player) return;
+      (bidsByPlayer[p.player] = bidsByPlayer[p.player]||[]).push({username, bid:p.bid});
+    });
+  });
+  const winners = {}; // player -> {username, price}
+  Object.entries(bidsByPlayer).forEach(([player, bidders])=>{
+    let winner;
+    if(bidders.length===1){ winner = bidders[0]; }
+    else{
+      const maxBid = Math.max(...bidders.map(b=>b.bid));
+      const top = bidders.filter(b=>b.bid===maxBid);
+      winner = top[Math.floor(Math.random()*top.length)];
+    }
+    winners[player] = {username:winner.username, price:winner.bid};
+  });
+  return winners;
+}
+
+async function computeOpenAssignment(listId){
+  const list = state.lists[listId];
+  const winners = buildOpenAssignmentPreview(listId);
+
+  // Se si ricalcola, prima restituisco i crediti già scalati in precedenza
+  if(list.status==='computed' && list.assigned){
+    Object.entries(list.assigned).forEach(([u,arr])=>{
+      const usr = state.users.find(x=>x.username===u);
+      if(usr) arr.forEach(a=>{ usr.credits += a.price; });
+    });
+  }
+
+  const perUser = {};
+  Object.entries(winners).forEach(([player,a])=>{
+    const plObj = list.players.find(p=>p.name===player);
+    (perUser[a.username] = perUser[a.username]||[]).push({player, price:a.price, role: plObj?plObj.role:null});
+    const usr = state.users.find(x=>x.username===a.username);
+    if(usr) usr.credits -= a.price;
+  });
+
+  list.assigned = perUser;
+  list.assignedPlayers = winners; // player -> vincitore, usato per generare il round 2
+  list.status = 'computed';
+  await persistLists();
+  await persistUsers();
+}
+
+// Copia nel round 2 solo i giocatori del round 1 rimasti senza vincitore.
+function generateRound2FromRound1(){
+  const round1 = state.lists.OPEN1;
+  const won = new Set(Object.keys(round1.assignedPlayers || {}));
+  state.lists.OPEN2.players = round1.players.filter(p=>!won.has(p.name));
+  state.lists.OPEN2.status = 'setup';
+  state.lists.OPEN2.assigned = null;
+  state.lists.OPEN2.assignedPlayers = null;
+}
+
+// ================= COMPLETAMENTO ROSE =================
+// Copre i ruoli mancanti (8 D, 8 C, 4 A a testa) usando i giocatori rimasti
+// scoperti dopo i due round di lista aperta, in ordine di quotazione
+// decrescente: ad ogni assegnazione paga chi ha più crediti tra chi ha
+// ancora bisogno di quel ruolo, al doppio della quotazione, e la classifica
+// dei crediti viene ricalcolata prima di ogni assegnazione.
+function countRolesAssigned(){
+  const counts = {}; // username -> {D:n,C:n,A:n,P:n}
+  state.users.filter(u=>u.role!=='admin').forEach(u=>{ counts[u.username] = {D:0,C:0,A:0,P:0}; });
+  LISTS_META.forEach(m=>{
+    const list = state.lists[m.id];
+    const role = LIST_ROLE[m.id];
+    if(list && list.assigned){
+      Object.entries(list.assigned).forEach(([u,a])=>{
+        if(counts[u] && a && a.player) counts[u][role]++;
+      });
+    }
+  });
+  OPEN_LISTS_META.forEach(m=>{
+    const list = state.lists[m.id];
+    if(list && list.assigned){
+      Object.entries(list.assigned).forEach(([u,arr])=>{
+        (arr||[]).forEach(a=>{ if(counts[u] && a.role) counts[u][a.role]++; });
+      });
+    }
+  });
+  if(state.squadCompletion){
+    Object.entries(state.squadCompletion.assigned).forEach(([u,arr])=>{
+      arr.forEach(a=>{ if(counts[u] && a.role) counts[u][a.role]++; });
+    });
+  }
+  if(state.manualAssignments){
+    Object.entries(state.manualAssignments).forEach(([u,arr])=>{
+      (arr||[]).forEach(a=>{ if(counts[u] && a.role) counts[u][a.role]++; });
+    });
+  }
+  return counts;
+}
+
+async function computeSquadCompletion(){
+  const counts = countRolesAssigned();
+  const won1 = new Set(Object.keys(state.lists.OPEN1.assignedPlayers || {}));
+  const won2 = new Set(Object.keys(state.lists.OPEN2.assignedPlayers || {}));
+  // Giocatori venduti nell'asta di riparazione: se questa è già stata
+  // calcolata, i suoi svincolati rimasti (invenduti) rientrano nel pool qui
+  // sotto e vengono ridistribuiti come un secondo completamento rose.
+  const wonRepair = new Set(Object.keys(state.lists.REPAIR.assignedPlayers || {}));
+  const wonManual = new Set();
+  if(state.manualAssignments){
+    Object.values(state.manualAssignments).forEach(arr=>(arr||[]).forEach(a=>wonManual.add(a.player)));
+  }
+  const repairPlayers = state.lists.REPAIR.status==='computed' ? state.lists.REPAIR.players : [];
+  const catalog = [...state.lists.OPEN1.players, ...state.lists.OPEN2.players, ...repairPlayers];
+  const seen = new Set();
+  let pool = catalog.filter(p=>{
+    if(seen.has(p.name)) return false;
+    seen.add(p.name);
+    return !won1.has(p.name) && !won2.has(p.name) && !wonRepair.has(p.name) && !wonManual.has(p.name) && ROLE_QUOTA[p.role];
+  });
+  pool.sort((a,b)=> b.minBid - a.minBid); // dal più caro al più economico
+
+  // Se si ricalcola, prima restituisco i crediti già scalati in precedenza
+  if(state.squadCompletion){
+    Object.entries(state.squadCompletion.assigned).forEach(([u,arr])=>{
+      const usr = state.users.find(x=>x.username===u);
+      if(usr) arr.forEach(a=>{ usr.credits += a.price; });
+    });
+  }
+
+  const assigned = {};
+  pool.forEach(player=>{
+    const eligible = state.users.filter(u=>
+      u.role!=='admin' && counts[u.username][player.role] < ROLE_QUOTA[player.role]
+    );
+    if(eligible.length===0) return;
+    eligible.sort((a,b)=> b.credits - a.credits);
+    const winner = eligible[0];
+    const price = player.minBid;
+    winner.credits -= price;
+    counts[winner.username][player.role]++;
+    (assigned[winner.username] = assigned[winner.username]||[]).push({player:player.name, price, role:player.role});
+  });
+
+  state.squadCompletion = {assigned, computedAt: new Date().toISOString()};
+  await persistSquadCompletion();
+  await persistUsers();
+}
+
+// ================= ROSE UTENTE =================
+// Ricostruisce la rosa di un utente sommando tutte le fonti "storiche"
+// (liste a ruolo, liste aperte, completamento rose, assegnazioni manuali).
+// Usata SOLO finché non è stata importata una rosa aggiornata da file per
+// quell'utente: se l'admin corregge a mano le assegnazioni fuori da questi
+// meccanismi, questo calcolo smette di essere affidabile ed è preferibile
+// caricare le rose complete aggiornate (vedi importRostersFromGrid).
+function buildComputedRoster(username){
+  const out = [];
+  LISTS_META.forEach(m=>{
+    const list = state.lists[m.id];
+    const a = list && list.assigned && list.assigned[username];
+    if(a && a.player) out.push({player:a.player, price:Number(a.price)||0, role:LIST_ROLE[m.id]||''});
+  });
+  OPEN_LISTS_META.forEach(m=>{
+    const list = state.lists[m.id];
+    if(!list || !list.assigned) return;
+    (list.assigned[username]||[]).forEach(a=>{ out.push({player:a.player, price:Number(a.price)||0, role:a.role||''}); });
+  });
+  if(state.squadCompletion && state.squadCompletion.assigned){
+    (state.squadCompletion.assigned[username]||[]).forEach(a=>{ out.push({player:a.player, price:Number(a.price)||0, role:a.role||''}); });
+  }
+  if(state.manualAssignments){
+    (state.manualAssignments[username]||[]).forEach(a=>{ out.push({player:a.player, price:Number(a.price)||0, role:a.role||''}); });
+  }
+  return out;
+}
+
+// Rosa "corrente" mostrata all'utente: usa la rosa importata da file se
+// presente (fonte di verità), altrimenti quella calcolata; toglie sempre i
+// giocatori che l'utente ha messo all'asta di riparazione: il giocatore
+// esce dalla rosa e il rimborso viene dato subito alla nomina, quindi resta
+// escluso per sempre (venduto ad altri o svincolato per il completamento
+// rose successivo) e non torna più tra i giocatori dell'ex proprietario.
+function getUserRoster(username){
+  const base = (state.finalRosters && state.finalRosters[username])
+    ? state.finalRosters[username].map(p=>({player:p.player, price:Number(p.price)||0, role:p.role||''}))
+    : buildComputedRoster(username);
+  const listedNow = new Set((state.repairListings||[]).filter(l=>l.username===username).map(l=>l.player));
+  return base.filter(p=>!listedNow.has(p.player));
+}
+
+// Aggiunge al listone dell'asta di riparazione tutte le nomine degli utenti
+// non ancora risolte e non ancora presenti nel listone corrente. Va lanciata
+// dall'admin prima di aprire un round di offerte.
+function addPendingNominationsToRepairList(){
+  const list = state.lists.REPAIR;
+  const inListNames = new Set(list.players.map(p=>p.name));
+  const toAdd = (state.repairListings||[]).filter(l=>!l.resolved && !inListNames.has(l.player));
+  toAdd.forEach(l=>{
+    list.players.push({name:l.player, minBid:l.minBid, role:l.role||'', owner:l.username, originalPrice:l.price});
+  });
+  return toAdd.length;
+}
+
+// Calcola l'assegnazione dell'asta di riparazione riusando il motore delle
+// liste aperte (vince l'offerta più alta per ciascun giocatore), poi:
+// - scala i crediti al vincitore (come una lista aperta normale)
+// I crediti al proprietario originale sono già stati restituiti subito al
+// momento della nomina (vedi attachRepairNominationHandlers), quindi qui non
+// si rimborsa più nessuno: il giocatore non torna mai al vecchio proprietario.
+// I giocatori del round senza offerte restano "svincolati": non tornano in
+// nessuna rosa, ma restano disponibili per il completamento rose che
+// l'admin lancia di nuovo dopo l'asta di riparazione (vedi computeSquadCompletion).
+// Ricalcolabile: se richiamata di nuovo, prima annulla tutto quanto fatto
+// dal calcolo precedente (crediti dei vincitori e spostamenti in state.finalRosters).
+async function computeRepairAssignment(){
+  const list = state.lists.REPAIR;
+
+  if(list.status==='computed' && list.assigned){
+    // storna il prezzo pagato dai vincitori del calcolo precedente
+    Object.entries(list.assigned).forEach(([u,arr])=>{
+      const usr = state.users.find(x=>x.username===u);
+      if(usr) arr.forEach(a=>{ usr.credits += a.price; });
+    });
+    // toglie il giocatore dalla rosa del vincitore del calcolo precedente
+    // (torna "svincolato", non al vecchio proprietario) e ripristina lo
+    // stato "non risolto" delle nomine di questo round, così il ricalcolo
+    // riparte da zero
+    list.players.forEach(p=>{
+      if(!p.owner) return;
+      const wasWon = list.assignedPlayers && list.assignedPlayers[p.name];
+      if(wasWon && state.finalRosters){
+        const prevWinner = wasWon.username;
+        if(state.finalRosters[prevWinner]) state.finalRosters[prevWinner] = state.finalRosters[prevWinner].filter(x=>x.player!==p.name);
+      }
+      const listing = state.repairListings.find(l=>l.username===p.owner && l.player===p.name);
+      if(listing){ listing.resolved=false; listing.wonBy=null; listing.finalPrice=null; listing.returnedUnsold=false; }
+    });
+  }
+
+  const winners = buildOpenAssignmentPreview('REPAIR');
+  const perUser = {};
+  Object.entries(winners).forEach(([player,a])=>{
+    const plObj = list.players.find(p=>p.name===player);
+    (perUser[a.username] = perUser[a.username]||[]).push({player, price:a.price, role: plObj?plObj.role:null});
+    const usr = state.users.find(x=>x.username===a.username);
+    if(usr) usr.credits -= a.price;
+    if(plObj && plObj.owner){
+      if(state.finalRosters){
+        if(state.finalRosters[plObj.owner]) state.finalRosters[plObj.owner] = state.finalRosters[plObj.owner].filter(x=>x.player!==player);
+        if(!state.finalRosters[a.username]) state.finalRosters[a.username] = [];
+        state.finalRosters[a.username].push({player, price:a.price});
+      }
+      const listing = state.repairListings.find(l=>l.username===plObj.owner && l.player===player);
+      if(listing){ listing.resolved=true; listing.wonBy=a.username; listing.finalPrice=a.price; }
+    }
+  });
+  list.players.forEach(p=>{
+    if(!winners[p.name] && p.owner){
+      // Invenduto: resta svincolato, disponibile per il completamento rose
+      // successivo. Non torna al vecchio proprietario (già rimborsato).
+      const listing = state.repairListings.find(l=>l.username===p.owner && l.player===p.name);
+      if(listing){ listing.resolved=true; listing.returnedUnsold=true; }
+    }
+  });
+
+  list.assigned = perUser;
+  list.assignedPlayers = winners;
+  list.status = 'computed';
+  await Promise.all([persistLists(), persistUsers(), persistRepairListings(), persistFinalRosters()]);
+}
+
+// Ordine fisso dei ruoli nel blocco di ogni squadra: le prime N1 righe sono
+// Portieri, le N2 successive Difensori, le N3 successive Centrocampisti, le
+// ultime N4 Attaccanti (schema standard 3P/8D/8C/4A, riconoscibile anche dal
+// colore di sfondo delle celle nel file originale). La posizione è fissa per
+// slot di rosa, quindi va contata sulla riga assoluta del blocco e non sugli
+// indici dei soli giocatori trovati, altrimenti un giocatore mancante
+// sfaserebbe i ruoli successivi.
+const ROSTER_ROLE_SLOTS = [
+  {role:'P', count:3},
+  {role:'D', count:8},
+  {role:'C', count:8},
+  {role:'A', count:4},
+];
+function roleForSlot(slotIndex){
+  // slotIndex: posizione 0-based della riga all'interno del blocco squadra
+  // (0 = prima riga dopo l'intestazione nome/costo).
+  let acc = 0;
+  for(const s of ROSTER_ROLE_SLOTS){
+    if(slotIndex < acc + s.count) return s.role;
+    acc += s.count;
+  }
+  return null; // oltre lo schema noto: ruolo sconosciuto, non blocchiamo l'import
+}
+
+// Legge una griglia (array di array, come restituita da XLSX
+// sheet_to_json({header:1})) nello stesso formato usato dall'export
+// dell'app: per ogni squadra un blocco di 3 colonne (nome, costo, vuota),
+// righe = giocatori, blocco termina alla riga "totale". Il ruolo di ogni
+// giocatore è dedotto dalla posizione fissa della riga nel blocco (vedi
+// ROSTER_ROLE_SLOTS sopra), non dal testo o dal colore della cella, perché
+// XLSX.utils.sheet_to_json non porta con sé la formattazione delle celle.
+function parseRosterGrid(grid){
+  // Usiamo la larghezza massima fra TUTTE le righe (non solo la riga 0)
+  // per decidere quante colonne/squadre scandire: se la riga di
+  // intestazione risulta più corta delle righe sottostanti (es. l'ultima
+  // squadra ha nome corto o celle formattate in modo diverso), usare solo
+  // header.length tagliava fuori le squadre più a destra.
+  const colCount = grid.reduce((max,row)=> Math.max(max, row ? row.length : 0), 0);
+  const header = grid[0] || [];
+  const teams = [];
+  for(let c=0;c<colCount;c+=3){
+    const teamName = header[c];
+    if(teamName==null || String(teamName).trim()==='') continue;
+    const players = [];
+    let slotIndex = 0;
+    for(let r=1;r<grid.length;r++){
+      const row = grid[r] || [];
+      const name = row[c];
+      if(name!=null && String(name).trim().toLowerCase()==='totale') break;
+      if(name==null || String(name).trim()===''){ slotIndex++; continue; }
+      const price = parseFloat(row[c+1]);
+      const role = roleForSlot(slotIndex);
+      players.push({name:String(name).trim(), price:isNaN(price)?0:price, role});
+      slotIndex++;
+    }
+    teams.push({excelName:String(teamName).trim(), players});
+  }
+  return teams;
+}
+
+// ================= USER =================
+
+function benchActiveCount(username){
+  return (state.repairListings||[]).filter(l=>l.username===username && !l.resolved).length;
+}
+
+function renderRepairNominationPanel(){
+  const me = state.currentUser;
+  const roster = getUserRoster(me);
+  const inRoundNames = new Set(state.lists.REPAIR.players.map(p=>p.name));
+  const myListings = (state.repairListings||[]).filter(l=>l.username===me);
+  const pendingMine = myListings.filter(l=>!l.resolved && !inRoundNames.has(l.player));
+  const inRoundMine = myListings.filter(l=>!l.resolved && inRoundNames.has(l.player));
+  const resolvedMine = myListings.filter(l=>l.resolved).sort((a,b)=> new Date(b.addedAt)-new Date(a.addedAt)).slice(0,15);
+  const activeCount = pendingMine.length + inRoundMine.length;
+  const limitReached = activeCount >= REPAIR_NOMINATION_LIMIT;
+  const roleShort = {P:'POR', D:'DIF', C:'CEN', A:'ATT'};
+  const win = (state.config && state.config.repairWindow) || {openAt:null, closeAt:null};
+  const winSt = timeWindowStatus(win);
+  const windowOpen = winSt==='open';
+  const disabled = limitReached || !windowOpen;
+  // Un giocatore già inserito nel listone di riparazione (inRoundMine) può
+  // ancora essere ritirato finché il round di offerte su quel listone non è
+  // partito: una volta che gli altri utenti possono fare offerte, ritirarlo
+  // creerebbe incoerenze, quindi da lì in poi lo svincolo è definitivo.
+  const repairListSt = listStatus(state.lists.REPAIR);
+  const canWithdrawInRound = repairListSt==='setup';
+  let windowStatusHtml;
+  if(winSt==='open'){
+    windowStatusHtml = `<div class="hint">Finestra svincoli aperta — chiude tra <span class="mono" data-countdown="repairwin" data-close="${win.closeAt}">--:--:--</span></div>`;
+  } else if(winSt==='closed'){
+    windowStatusHtml = `<div class="hint" style="color:var(--coral);">Finestra svincoli chiusa. Attendi che l'admin ne apra una nuova.</div>`;
+  } else {
+    windowStatusHtml = `<div class="hint">La finestra per gli svincoli non è ancora aperta.</div>`;
+  }
+
+  return `
+  <div class="bench-wrap">
+    <div class="bench-rail"></div>
+    <div class="bench-head">
+      <h3>Panchina — svincoli</h3>
+      <span class="bench-count ${limitReached?'full':''}">${activeCount} / ${REPAIR_NOMINATION_LIMIT} usati</span>
+    </div>
+    <p class="bench-desc">Manda un giocatore in panchina per metterlo all'asta di riparazione: esce subito dalla rosa e i crediti che avevi pagato tornano subito a te, come base d'asta fissa. Se qualcuno lo prende in asta va a lui, altrimenti resta svincolato e potrà finire a un'altra squadra con il completamento rose. Non torna più nella tua rosa.</p>
+    ${windowStatusHtml}
+    ${roster.length===0 ? '<p class="bench-empty">Nessun giocatore in rosa al momento.</p>' : `
+    <div class="bench-grid">
+      ${roster.map((p,i)=>`
+        <div class="bench-card ${disabled?'is-off':''}">
+          <div class="bench-card-top">
+            <span class="role-chip role-${esc(p.role||'')}">${roleShort[p.role]||'?'}</span>
+            <span class="bench-card-name">${esc(p.player)}</span>
+          </div>
+          <div class="bc-field">
+            <label>Base d'asta</label>
+            <div class="bc-locked"><span>${fmtCredits(p.price)}</span><span class="bc-locked-tag">fissa</span></div>
+          </div>
+          <div class="bc-field">
+            <label>Ruolo</label>
+            <select data-nominate-role-idx="${i}" ${disabled?'disabled':''}>
+              <option value="">-- seleziona --</option>
+              <option value="P" ${p.role==='P'?'selected':''}>Portiere</option>
+              <option value="D" ${p.role==='D'?'selected':''}>Difensore</option>
+              <option value="C" ${p.role==='C'?'selected':''}>Centrocampista</option>
+              <option value="A" ${p.role==='A'?'selected':''}>Attaccante</option>
+            </select>
+          </div>
+          <button class="bench-card-btn" data-nominate-idx="${i}" ${disabled?'disabled title="'+(!windowOpen?'La finestra per gli svincoli non è aperta':'Limite di '+REPAIR_NOMINATION_LIMIT+' svincoli raggiunto')+'"':''}>Svincola</button>
+        </div>`).join('')}
+    </div>`}
+    ${pendingMine.length>0 ? `
+    <div class="bench-sub">
+      <h4>Nomine in attesa</h4>
+      ${pendingMine.map(l=>`
+        <div class="bench-row">
+          <span>${esc(l.player)} <span class="brow-meta">${esc(ROLE_LABEL[l.role]||l.role||'')}</span></span>
+          <span class="brow-meta">${fmtCredits(l.minBid)}</span>
+          <button data-cancel-nomination="${esc(l.id)}">Ritira</button>
+        </div>`).join('')}
+    </div>` : ''}
+    ${inRoundMine.length>0 ? `
+    <div class="bench-sub">
+      <h4>Già nel listone del round in corso</h4>
+      ${inRoundMine.map(l=>`
+        <div class="bench-row">
+          <span>${esc(l.player)} <span class="brow-meta">${esc(ROLE_LABEL[l.role]||l.role||'')}</span></span>
+          <span class="brow-meta">${fmtCredits(l.minBid)}</span>
+          ${canWithdrawInRound ? `<button data-cancel-nomination="${esc(l.id)}">Ritira</button>` : ''}
+        </div>`).join('')}
+      ${!canWithdrawInRound ? `<p class="hint">Il round di offerte per l'asta di riparazione è aperto o già concluso: da questo momento lo svincolo non è più ritirabile.</p>` : ''}
+    </div>` : ''}
+    ${resolvedMine.length>0 ? `
+    <div class="bench-sub">
+      <h4>Esiti recenti</h4>
+      ${resolvedMine.map(l=>`
+        <div class="bench-row">
+          <span>${esc(l.player)}</span>
+          <span class="brow-outcome ${l.wonBy?'won':''}">${l.wonBy?`Vinto da ${esc(l.wonBy)} (${fmtCredits(l.finalPrice)})`:'Invenduto, svincolato'}</span>
+        </div>`).join('')}
+    </div>` : ''}
+  </div>`;
+}
+
+function renderUser(){
+  const rows = [0,1,2,3];
+  const tab = state.userTab || 'campo';
+  const benchCount = benchActiveCount(state.currentUser);
+  return `
+  ${renderTopbar()}
+  <div class="wrap">
+    ${renderAnomalyBanner(false)}
+    <div class="tabs">
+      <button class="tab-btn ${tab==='campo'?'active':''}" data-user-tab="campo">Campo</button>
+      <button class="tab-btn ${tab==='panchina'?'active':''}" data-user-tab="panchina">Panchina${benchCount>0?`<span class="tab-count">${benchCount}</span>`:''}</button>
+    </div>
+    ${tab==='campo' ? `
+    <div class="pitch-wrap standalone">
+      <div class="formation">
+        ${rows.map(r=>`<div class="form-row">${LISTS_META.filter(m=>m.row===r).map(m=>renderTile(m)).join('')}</div>`).join('')}
+        <div class="form-row">${OPEN_LISTS_META.filter(m=>m.id!=='REPAIR').map(m=>renderTile(m)).join('')}</div>
+        <div class="form-row">${OPEN_LISTS_META.filter(m=>m.id==='REPAIR').map(m=>renderTile(m)).join('')}</div>
+      </div>
+    </div>` : renderRepairNominationPanel()}
+  </div>
+  ${state.openListId ? (OPEN_LISTS_META.some(m=>m.id===state.openListId) ? renderOpenPrefModal(state.openListId) : renderPrefModal(state.openListId)) : ''}
+  ${state.toast?`<div class="toast">${esc(state.toast)}</div>`:''}
+  `;
+}
+
+function renderTile(m){
+  const list = state.lists[m.id];
+  const st = listStatus(list);
+  const me = state.currentUser;
+  const subs = state.submissions[m.id] || {};
+  const mySub = subs[me];
+  const hasSubmitted = !!mySub;
+  const isLocked = hasSubmitted && !!(list.lockedAt && list.lockedAt[me] === list.openAt);
+  let statusHtml = '';
+  let clickable = true;
+  if(st==='setup'){
+    statusHtml = `<div class="status-line notopen">Non ancora aperta</div>`;
+    clickable = false;
+  } else if(st==='open'){
+    if(isLocked){
+      statusHtml = `<div class="status-line done">Compilato</div>`;
+    } else {
+      statusHtml = `<div class="status-line countdown mono" data-countdown="${m.id}" data-close="${list.closeAt}">--:--:--</div>`;
+    }
+  } else if(st==='closed'){
+    statusHtml = `<div class="status-line closed">Lista chiusa</div>`;
+    clickable = hasSubmitted;
+  } else if(st==='computed'){
+    const mine = list.assigned && list.assigned[me];
+    statusHtml = mine ? `<div class="status-line done">Assegnato</div><div class="assigned-player">${esc(mine.player)} · ${fmtCredits(mine.price)} cr</div>` : `<div class="status-line closed">Lista chiusa</div>`;
+    clickable = false;
+  }
+  return `
+  <div class="tile ${clickable?'':'disabled'}" tabindex="0" role="button" data-open-tile="${m.id}" data-clickable="${clickable}">
+    <div class="role-label">${list.players.length} giocatori</div>
+    <h4>${esc(list.label)}</h4>
+    ${statusHtml}
+  </div>`;
+}
+
+function renderPrefModal(listId){
+  const list = state.lists[listId];
+  const me = state.currentUser;
+  const subs = state.submissions[listId] || {};
+  const mySub = subs[me];
+  const st = listStatus(list);
+  // Una volta inviate le preferenze restano bloccate (sola lettura) finché la
+  // lista resta aperta con lo stesso orario di apertura. Se l'admin riapre la
+  // lista (cambiando openAt, es. "Apri ora" o "Salva orari"), il blocco decade
+  // e l'utente può tornare a modificare la propria compilazione.
+  const isLocked = !!mySub && !!(list.lockedAt && list.lockedAt[me] === list.openAt);
+  const canEdit = st==='open' && !isLocked;
+  const readOnly = !!mySub && !canEdit;
+
+  if(!state.prefDraft){
+    state.prefDraft = mySub ? mySub.map(p=>({player:p.player, bid:String(p.bid)})) : Array.from({length:6},()=>({player:'',bid:''}));
+  }
+  if(readOnly){
+    return `
+    <div class="modal-overlay" id="modal-overlay">
+      <div class="modal-box">
+        <h2>${esc(list.label)} — le tue preferenze</h2>
+        ${mySub.map((p,i)=>`<div class="summary-row"><span>#${i+1} ${esc(p.player)}</span><span class="bid mono">${fmtCredits(p.bid)} cr</span></div>`).join('')}
+        <div class="modal-actions"><button class="btn-secondary" id="modal-close">Chiudi</button></div>
+      </div>
+    </div>`;
+  }
+
+  const usedPlayers = state.prefDraft.map(p=>p.player).filter(Boolean);
+  return `
+  <div class="modal-overlay" id="modal-overlay">
+    <div class="modal-box">
+      <h2>${esc(list.label)}</h2>
+      <p class="desc" style="margin-bottom:16px;">Scegli 6 giocatori in ordine di preferenza. L'offerta non può essere inferiore alla base d'asta.</p>
+      ${state.prefDraft.map((p,i)=>`
+        <div class="pref-row">
+          <div class="num">${i+1}</div>
+          <select data-pref-player="${i}">
+            <option value="">Seleziona giocatore</option>
+            ${list.players.map(pl=>`<option value="${esc(pl.name)}" data-min="${pl.minBid}" ${p.player===pl.name?'selected':''} ${usedPlayers.includes(pl.name) && p.player!==pl.name?'disabled':''}>${esc(pl.name)} (min ${fmtCredits(pl.minBid)})</option>`).join('')}
+          </select>
+          <input type="number" placeholder="Offerta" data-pref-bid="${i}" value="${esc(p.bid)}">
+        </div>
+        ${state.prefErrors[i] ? `<div class="pref-err">${esc(state.prefErrors[i])}</div>` : ''}
+      `).join('')}
+      <div class="modal-actions">
+        <button class="btn-secondary" id="modal-cancel">Annulla</button>
+        <button class="btn-primary" style="width:auto;" id="modal-confirm">Conferma preferenze</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderOpenPrefModal(listId){
+  const list = state.lists[listId];
+  const me = state.currentUser;
+  const meObj = currentUserObj();
+  const subs = state.submissions[listId] || {};
+  const mySub = subs[me];
+  const st = listStatus(list);
+  // Una volta inviate le preferenze restano bloccate (sola lettura) finché la
+  // lista resta aperta con lo stesso orario di apertura. Se l'admin riapre la
+  // lista (cambiando openAt, es. "Apri ora" o "Salva orari"), il blocco decade
+  // e l'utente può tornare a modificare la propria compilazione.
+  const isLocked = !!mySub && !!(list.lockedAt && list.lockedAt[me] === list.openAt);
+  const canEdit = st==='open' && !isLocked;
+  const readOnly = !!mySub && !canEdit;
+
+  if(!state.prefDraft){
+    state.prefDraft = mySub ? mySub.map(p=>({player:p.player, bid:String(p.bid)})) : Array.from({length:6},()=>({player:'',bid:''}));
+  }
+  if(readOnly){
+    const filled = mySub.filter(p=>p.player);
+    return `
+    <div class="modal-overlay" id="modal-overlay">
+      <div class="modal-box">
+        <h2>${esc(list.label)} — le tue preferenze</h2>
+        ${filled.length===0?'<p class="empty-note">Nessuna preferenza inviata.</p>':filled.map(p=>`<div class="summary-row"><span>${esc(p.player)}</span><span class="bid mono">${fmtCredits(p.bid)} cr</span></div>`).join('')}
+        <div class="modal-actions"><button class="btn-secondary" id="modal-close">Chiudi</button></div>
+      </div>
+    </div>`;
+  }
+
+  const sumBids = state.prefDraft.reduce((s,p)=> s + (parseFloat(p.bid)||0), 0);
+  return `
+  <div class="modal-overlay" id="modal-overlay">
+    <div class="modal-box">
+      <h2>${esc(list.label)}</h2>
+      <p class="desc" style="margin-bottom:16px;">Indica fino a 6 giocatori, senza obbligo di compilarli tutti e senza ordine di preferenza. In caso di richieste multiple sullo stesso giocatore vince l'offerta più alta. La somma delle offerte non può superare i tuoi crediti residui (${fmtCredits(meObj.credits)}).</p>
+      ${state.prefDraft.map((p,i)=>`
+        <div class="pref-row">
+          <div class="num">${i+1}</div>
+          <div class="ac-wrap">
+            <input type="text" autocomplete="off" placeholder="Cerca giocatore..." data-openpref-player="${i}" value="${esc(p.player)}">
+            <div class="ac-suggestions" data-openpref-suggest="${i}" hidden></div>
+          </div>
+          <input type="number" placeholder="Offerta" data-openpref-bid="${i}" value="${esc(p.bid)}">
+        </div>
+        ${state.prefErrors[i] ? `<div class="pref-err">${esc(state.prefErrors[i])}</div>` : ''}
+      `).join('')}
+      <div class="hint">Totale offerte: <span class="mono" id="ac-sum-total">${fmtCredits(sumBids)}</span> / ${fmtCredits(meObj.credits)} crediti disponibili</div>
+      ${state.prefErrors.sum ? `<div class="pref-err">${esc(state.prefErrors.sum)}</div>` : ''}
+      <div class="modal-actions">
+        <button class="btn-secondary" id="modal-cancel">Annulla</button>
+        <button class="btn-primary" style="width:auto;" id="modal-confirm-open">Conferma preferenze</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function attachUserHandlers(){
+  document.querySelectorAll('[data-user-tab]').forEach(t=>{
+    t.addEventListener('click', ()=>{
+      state.userTab = t.dataset.userTab;
+      render();
+    });
+  });
+  document.querySelectorAll('[data-open-tile]').forEach(t=>{
+    const openIt = ()=>{
+      if(t.dataset.clickable !== 'true') return;
+      state.openListId = t.dataset.openTile;
+      state.prefDraft = null;
+      state.prefErrors = {};
+      render();
+    };
+    t.addEventListener('click', openIt);
+    t.addEventListener('keydown', e=>{ if(e.key==='Enter' || e.key===' '){ e.preventDefault(); openIt(); } });
+  });
+    startCountdowns();
+    if(state.openListId && OPEN_LISTS_META.some(m=>m.id===state.openListId)){
+    attachOpenModalHandlers();
+  } else {
+    attachModalHandlers();
+  }
+  attachRepairNominationHandlers();
+}
+
+function attachRepairNominationHandlers(){
+  document.querySelectorAll('[data-nominate-idx]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const idx = parseInt(btn.dataset.nominateIdx);
+      const roster = getUserRoster(state.currentUser);
+      const entry = roster[idx];
+      if(!entry) return;
+      if(!isRepairWindowOpen()){
+        showToast('La finestra per gli svincoli non è aperta.');
+        return;
+      }
+      const activeCount = (state.repairListings||[]).filter(l=>l.username===state.currentUser && !l.resolved).length;
+      if(activeCount >= REPAIR_NOMINATION_LIMIT){
+        showToast(`Hai raggiunto il limite massimo di ${REPAIR_NOMINATION_LIMIT} svincoli.`);
+        return;
+      }
+      const minBid = entry.price;
+      const roleSelect = document.querySelector(`[data-nominate-role-idx="${idx}"]`);
+      const role = roleSelect ? roleSelect.value : '';
+      if(!role){ showToast('Seleziona il ruolo del giocatore.'); return; }
+      if(!confirm(`Mettere ${entry.player} all'asta di riparazione? Esce subito dalla tua rosa e i crediti pagati (${fmtCredits(entry.price)}) ti vengono restituiti subito.`)) return;
+      state.repairListings.push({
+        id: uid(), username: state.currentUser, player: entry.player, price: entry.price,
+        minBid, role, addedAt: new Date().toISOString(), resolved:false, wonBy:null, finalPrice:null, returnedUnsold:false
+      });
+      // Rimborso immediato: il giocatore esce subito e definitivamente dalla
+      // rosa, indipendentemente dall'esito dell'asta di riparazione (venduto
+      // o svincolato per il completamento rose successivo).
+      const me = state.users.find(u=>u.username===state.currentUser);
+      if(me) me.credits += entry.price;
+      await Promise.all([persistRepairListings(), persistUsers()]);
+      showToast('Giocatore messo all\'asta di riparazione e crediti restituiti.');
+      render();
+    });
+  });
+  document.querySelectorAll('[data-cancel-nomination]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const id = btn.dataset.cancelNomination;
+      const listing = state.repairListings.find(l=>l.id===id);
+      if(!listing) return;
+      // Se il giocatore è già nel listone del round di riparazione ma il
+      // round non è ancora aperto alle offerte, blocca comunque il ritiro
+      // per sicurezza (in caso lo stato sia cambiato nel frattempo).
+      const inRoundNames = new Set(state.lists.REPAIR.players.map(p=>p.name));
+      if(inRoundNames.has(listing.player) && listStatus(state.lists.REPAIR)!=='setup'){
+        showToast('Non è più possibile ritirare questo svincolo: il round è già aperto o concluso.');
+        return;
+      }
+      // Annulla il rimborso dato alla nomina: il giocatore torna in rosa.
+      const owner = state.users.find(u=>u.username===listing.username);
+      if(owner) owner.credits -= listing.price;
+      // Se era già stato inserito nel listone di riparazione, toglilo anche
+      // da lì.
+      state.lists.REPAIR.players = state.lists.REPAIR.players.filter(p=>!(p.name===listing.player && p.owner===listing.username));
+      state.repairListings = state.repairListings.filter(l=>l.id!==id);
+      await Promise.all([persistRepairListings(), persistUsers(), persistLists()]);
+      showToast('Svincolo ritirato, giocatore tornato in rosa.');
+      render();
+    });
+  });
+}
+
+function attachModalHandlers(){
+  const overlay = document.getElementById('modal-overlay');
+  if(!overlay) return;
+  const close = ()=>{ state.openListId=null; state.prefDraft=null; state.prefErrors={}; render(); };
+  const closeBtn = document.getElementById('modal-close');
+  if(closeBtn) closeBtn.addEventListener('click', close);
+  const cancelBtn = document.getElementById('modal-cancel');
+  if(cancelBtn) cancelBtn.addEventListener('click', close);
+  overlay.addEventListener('click', e=>{ if(e.target===overlay) close(); });
+
+  document.querySelectorAll('[data-pref-player]').forEach(sel=>{
+    sel.addEventListener('change', ()=>{
+      const i = parseInt(sel.dataset.prefPlayer);
+      state.prefDraft[i].player = sel.value;
+      render();
+    });
+  });
+  document.querySelectorAll('[data-pref-bid]').forEach(inp=>{
+    inp.addEventListener('input', ()=>{
+      const i = parseInt(inp.dataset.prefBid);
+      state.prefDraft[i].bid = inp.value;
+    });
+  });
+    const confirmBtn = document.getElementById('modal-confirm');
+    if(confirmBtn) confirmBtn.addEventListener('click', async ()=>{
+      document.querySelectorAll('[data-pref-bid]').forEach(inp=>{
+      const i = parseInt(inp.dataset.prefBid);
+      state.prefDraft[i].bid = inp.value;
+    });
+    const list = state.lists[state.openListId];
+    const me = currentUserObj();
+    const errors = {};
+    const chosenNames = new Set();
+    state.prefDraft.forEach((p,i)=>{
+      if(!p.player){ errors[i]='Seleziona un giocatore.'; return; }
+      if(chosenNames.has(p.player)){ errors[i]="Giocatore già scelto in un'altra preferenza."; return; }
+      chosenNames.add(p.player);
+      const plObj = list.players.find(pl=>pl.name===p.player);
+      const bidNum = parseFloat(p.bid);
+      if(!plObj){ errors[i]='Giocatore non valido.'; return; }
+      if(isNaN(bidNum) || bidNum < plObj.minBid){ errors[i]=`L'offerta deve essere almeno ${fmtCredits(plObj.minBid)}.`; return; }
+      if(bidNum > me.credits){ errors[i]=`L'offerta supera i tuoi crediti residui (${fmtCredits(me.credits)}).`; return; }
+    });
+    if(Object.keys(errors).length>0){
+      state.prefErrors = errors;
+      render();
+      return;
+    }
+    
+    const final = state.prefDraft.map(p=>({player:p.player, bid:parseFloat(p.bid)}));
+    if(!state.submissions[state.openListId]) state.submissions[state.openListId] = {};
+    state.submissions[state.openListId][state.currentUser] = final;
+    if(!list.lockedAt) list.lockedAt = {};
+    list.lockedAt[state.currentUser] = list.openAt || null;
+    await Promise.all([persistSubs(), persistLists()]);
+    state.openListId = null;
+    state.prefDraft = null;
+    state.prefErrors = {};
+    showToast('Preferenze salvate.');
+    render();
+  });
+}
+
+function attachOpenModalHandlers(){
+  const overlay = document.getElementById('modal-overlay');
+  if(!overlay) return;
+  const close = ()=>{ state.openListId=null; state.prefDraft=null; state.prefErrors={}; render(); };
+  const closeBtn = document.getElementById('modal-close');
+  if(closeBtn) closeBtn.addEventListener('click', close);
+  const cancelBtn = document.getElementById('modal-cancel');
+  if(cancelBtn) cancelBtn.addEventListener('click', close);
+  overlay.addEventListener('click', e=>{ if(e.target===overlay) close(); });
+
+  const list = state.lists[state.openListId];
+
+  const updateSumHint = ()=>{
+    const sumEl = document.getElementById('ac-sum-total');
+    if(!sumEl) return;
+    const sum = state.prefDraft.reduce((s,p)=> s + (parseFloat(p.bid)||0), 0);
+    sumEl.textContent = fmtCredits(sum);
+  };
+
+  // Autocompletamento: al posto della select, un campo di testo che
+  // suggerisce i nomi dei giocatori disponibili man mano che si digita.
+  document.querySelectorAll('[data-openpref-player]').forEach(inp=>{
+    const i = parseInt(inp.dataset.openprefPlayer);
+    const box = document.querySelector(`[data-openpref-suggest="${i}"]`);
+    if(!box) return;
+
+    const pick = (name)=>{
+      inp.value = name;
+      state.prefDraft[i].player = name;
+      inp.classList.remove('invalid');
+      box.hidden = true;
+      updateSumHint();
+    };
+
+    const renderSuggestions = ()=>{
+      const q = inp.value.trim().toLowerCase();
+      const usedElsewhere = state.prefDraft.map((p,idx)=> idx!==i ? p.player : '').filter(Boolean);
+      const matches = list.players
+        .filter(pl=> !usedElsewhere.includes(pl.name) && (q==='' || pl.name.toLowerCase().includes(q)))
+        .slice(0,8);
+      box.innerHTML = matches.length===0
+        ? `<div class="ac-empty">Nessun giocatore trovato</div>`
+        : matches.map(pl=>`<div class="ac-item" data-ac-pick="${esc(pl.name)}"><span class="ac-name">${esc(pl.name)}</span><span class="ac-meta">min ${fmtCredits(pl.minBid)} · ${esc(pl.role)}</span></div>`).join('');
+      box.hidden = false;
+      box.querySelectorAll('[data-ac-pick]').forEach(item=>{
+        // mousedown (non click) per anticipare il blur dell'input
+        item.addEventListener('mousedown', e=>{ e.preventDefault(); pick(item.dataset.acPick); });
+      });
+    };
+
+    inp.addEventListener('focus', renderSuggestions);
+    inp.addEventListener('input', ()=>{
+      state.prefDraft[i].player = inp.value;
+      const exact = list.players.some(pl=>pl.name===inp.value.trim());
+      inp.classList.toggle('invalid', inp.value.trim()!=='' && !exact);
+      renderSuggestions();
+      updateSumHint();
+    });
+    inp.addEventListener('blur', ()=>{ setTimeout(()=>{ box.hidden = true; }, 150); });
+    inp.addEventListener('keydown', e=>{
+      if(e.key==='Escape'){ box.hidden = true; inp.blur(); }
+      else if(e.key==='Enter'){
+        e.preventDefault();
+        const exactMatch = list.players.find(pl=>pl.name.toLowerCase()===inp.value.trim().toLowerCase());
+        const firstItem = box.querySelector('[data-ac-pick]');
+        const target = exactMatch ? exactMatch.name : (firstItem ? firstItem.dataset.acPick : null);
+        if(target) pick(target); else box.hidden = true;
+      }
+    });
+  });
+  document.querySelectorAll('[data-openpref-bid]').forEach(inp=>{
+    inp.addEventListener('input', ()=>{
+      const i = parseInt(inp.dataset.openprefBid);
+      state.prefDraft[i].bid = inp.value;
+      updateSumHint();
+    });
+  });
+
+  const confirmBtn = document.getElementById('modal-confirm-open');
+  if(confirmBtn) confirmBtn.addEventListener('click', async ()=>{
+    document.querySelectorAll('[data-openpref-bid]').forEach(inp=>{
+      const i = parseInt(inp.dataset.openprefBid);
+      state.prefDraft[i].bid = inp.value;
+    });
+    const list = state.lists[state.openListId];
+    const me = currentUserObj();
+    const errors = {};
+    const chosenNames = new Set();
+    let sum = 0;
+    state.prefDraft.forEach((p,i)=>{
+      if(!p.player) return; // riga vuota, ammessa
+      if(chosenNames.has(p.player)){ errors[i]="Giocatore già scelto in un'altra preferenza."; return; }
+      chosenNames.add(p.player);
+      const plObj = list.players.find(pl=>pl.name===p.player);
+      const bidNum = parseFloat(p.bid);
+      if(!plObj){ errors[i]='Giocatore non valido.'; return; }
+      if(isNaN(bidNum) || bidNum < plObj.minBid){ errors[i]=`L'offerta deve essere almeno ${fmtCredits(plObj.minBid)}.`; return; }
+      sum += bidNum;
+    });
+    if(sum > me.credits){ errors.sum = `La somma delle offerte (${fmtCredits(sum)}) supera i crediti residui (${fmtCredits(me.credits)}).`; }
+    if(Object.keys(errors).length>0){
+      state.prefErrors = errors;
+      render();
+      return;
+    }
+    const final = state.prefDraft.filter(p=>p.player).map(p=>({player:p.player, bid:parseFloat(p.bid)}));
+    if(!state.submissions[state.openListId]) state.submissions[state.openListId] = {};
+    state.submissions[state.openListId][state.currentUser] = final;
+    if(!list.lockedAt) list.lockedAt = {};
+    list.lockedAt[state.currentUser] = list.openAt || null;
+    await Promise.all([persistSubs(), persistLists()]);
+    state.openListId = null;
+    state.prefDraft = null;
+    state.prefErrors = {};
+    showToast('Preferenze salvate.');
+    render();
+  });
+}
+
+let countdownTimer = null;
+function startCountdowns(){
+  if(countdownTimer) clearInterval(countdownTimer);
+  const tick = ()=>{
+    document.querySelectorAll('[data-countdown]').forEach(el=>{
+      const close = el.dataset.close;
+      if(!close) return;
+      const diff = new Date(close).getTime() - Date.now();
+      if(diff<=0){ el.textContent = 'Chiusura in corso...'; return; }
+      const h = Math.floor(diff/3600000);
+      const m = Math.floor((diff%3600000)/60000);
+      const s = Math.floor((diff%60000)/1000);
+      el.textContent = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+    });
+  };
+  tick();
+  countdownTimer = setInterval(tick, 1000);
+}
+
+// ================= ROOT RENDER =================
+function render(){
+  const app = document.getElementById('app');
+  if(state.configMissing){
+    app.innerHTML = `<div class="login-screen"><div class="login-card"><h1>Configurazione mancante</h1><p class="sub">Questo file non è ancora collegato a un database. Apri il codice sorgente del file, cerca "firebaseConfig" all'inizio del tag &lt;script&gt; e incolla lì i dati del tuo progetto Firebase (vedi le istruzioni nei commenti).</p></div></div>`;
+    return;
+  }
+  if(state.configError){
+    app.innerHTML = `<div class="login-screen"><div class="login-card"><h1>Errore di connessione</h1><p class="sub">Non riesco a collegarmi al database: ${esc(state.configError)}. Controlla la configurazione Firebase e le regole di Firestore.</p></div></div>`;
+    return;
+  }
+  if(state.loading){ app.innerHTML = '<div class="login-screen"><span style="color:#fff;">Caricamento...</span></div>'; return; }
+  if(!state.currentUser){
+    app.innerHTML = renderLogin();
+    attachLoginHandlers();
+    return;
+  }
+  const me = currentUserObj();
+  if(!me){ state.currentUser=null; render(); return; }
+  if(me.role==='admin'){
+    app.innerHTML = renderAdmin();
+    attachTopbarHandlers();
+    attachAdminHandlers();
+  } else {
+    app.innerHTML = renderUser();
+    attachTopbarHandlers();
+    attachUserHandlers();
+  }
+}
+
+loadAll();
+</script>
+</body>
+</html>
