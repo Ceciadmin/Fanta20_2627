@@ -222,7 +222,8 @@ const LISTS_META = [
 const OPEN_LISTS_META = [
   {id:'OPEN1', label:'Lista aperta round 1', row:4},
   {id:'OPEN2', label:'Lista aperta round 2', row:4},
-  {id:'REPAIR', label:'Asta di riparazione', row:5},
+  {id:'REPAIR1', label:'Asta di riparazione 1', row:5},
+  {id:'REPAIR2', label:'Asta di riparazione 2', row:5},
 ];
 
 const ROLE_QUOTA = {D:8, C:8, A:4};
@@ -542,6 +543,17 @@ async function loadAll(){
     }
     // Migrazione: se il documento esisteva già senza le liste aperte, le crea
     let needsMigration = false;
+    // Migrazione dal vecchio schema con un'unica lista 'REPAIR' (prima
+    // dell'introduzione della riparazione 2): se esiste ancora e la nuova
+    // REPAIR1 non è stata creata, ne eredita tutti i dati (listone,
+    // assegnazione, orari) così un'asta di riparazione già in corso o già
+    // conclusa non va persa. La REPAIR2 viene poi creata vuota dal ciclo
+    // sotto, come una qualsiasi lista aperta mancante.
+    if(state.lists.REPAIR && !state.lists.REPAIR1){
+      state.lists.REPAIR1 = {...state.lists.REPAIR, id:'REPAIR1', label:'Asta di riparazione 1'};
+      delete state.lists.REPAIR;
+      needsMigration = true;
+    }
     OPEN_LISTS_META.forEach(m=>{
       if(!state.lists[m.id]){
         state.lists[m.id] = {id:m.id, label:m.label, players:[], openAt:null, closeAt:null, status:'setup', assigned:null, assignedPlayers:null, lockedAt:{}};
@@ -990,7 +1002,7 @@ function renderAdminCompletamento(){
   </div>
   <div class="panel">
     <h2>Completamento rose</h2>
-    <p class="desc">Da usare dopo i due round di lista aperta (e dopo eventuali assegnazioni manuali). Copre i ruoli mancanti (8 difensori, 8 centrocampisti, 4 attaccanti per utente) usando i giocatori del listone rimasti scoperti, in ordine di quotazione, assegnandoli sempre a chi ha più crediti residui. Ogni assegnazione costa il doppio della quotazione, e la classifica dei crediti si ricalcola prima di ogni assegnazione. Se l'asta di riparazione è già stata calcolata, il pool include anche i suoi svincolati rimasti (i giocatori del listone di riparazione senza offerte): rilancia questo completamento dopo l'asta di riparazione per assegnarli.</p>
+    <p class="desc">Da usare dopo i due round di lista aperta ed entrambe le aste di riparazione (e dopo eventuali assegnazioni manuali). Copre i ruoli mancanti (8 difensori, 8 centrocampisti, 4 attaccanti per utente) usando i giocatori del listone rimasti scoperti, in ordine di quotazione, assegnandoli sempre a chi ha più crediti residui. Ogni assegnazione costa il doppio della quotazione, e la classifica dei crediti si ricalcola prima di ogni assegnazione. Se la riparazione 1 e/o la riparazione 2 sono già state calcolate, il pool include anche i loro svincolati rimasti: rilancia questo completamento dopo entrambe le aste di riparazione per assegnarli.</p>
     <button class="btn-primary" style="width:auto;" id="btn-completa-rose" ${ready?'':'disabled'}>${state.squadCompletion?'Ricalcola completamento':'Completa rose'}</button>
     ${!ready?`<p class="hint">Calcola prima l'assegnazione di round 1 e round 2.</p>`:''}
   </div>
@@ -1007,12 +1019,50 @@ function renderAdminCompletamento(){
   `;
 }
 
-function renderAdminRiparazione(){
-  const list = state.lists.REPAIR;
+function renderRepairListCard(listId){
+  const list = state.lists[listId];
   const st = listStatus(list);
   const badgeClass = st==='open'?'badge-open':st==='closed'?'badge-closed':st==='computed'?'badge-computed':'badge-setup';
   const badgeText = st==='open'?'Aperta':st==='closed'?'Chiusa':st==='computed'?'Assegnata':'Da configurare';
-  const pending = (state.repairListings||[]).filter(l=>!l.resolved && !list.players.some(p=>p.name===l.player));
+  return `
+  <div class="list-card">
+    <h3>${esc(list.label)} <span><span class="badge ${badgeClass}">${badgeText}</span></span></h3>
+    <div class="players-count" style="margin-bottom:10px;">${list.players.length} giocatori nel listone</div>
+    <div class="row-flex">
+      <div class="field">
+        <label>Apertura</label>
+        <input type="datetime-local" data-open="${listId}" value="${list.openAt?toLocalInput(list.openAt):''}">
+      </div>
+      <div class="field">
+        <label>Chiusura</label>
+        <input type="datetime-local" data-close="${listId}" value="${list.closeAt?toLocalInput(list.closeAt):''}">
+      </div>
+      <button class="btn-secondary" data-save-times="${listId}">Salva orari</button>
+    </div>
+    <div class="row-flex" style="margin-top:8px;">
+      <div class="field" style="max-width:140px;">
+        <label>Apri per (min)</label>
+        <input type="number" min="1" value="60" data-quick-min="${listId}">
+      </div>
+      <button class="btn-secondary" data-quick-open="${listId}">Apri ora</button>
+      <button class="btn-small" data-close-now="${listId}">Chiudi ora</button>
+      <button class="btn-primary" style="width:auto;" data-compute-repair="${listId}" ${list.players.length===0?'disabled':''}>${list.status==='computed'?'Ricalcola assegnazione':'Calcola assegnazione'}</button>
+    </div>
+    ${list.players.length>0 ? `<details style="margin-top:10px;"><summary style="cursor:pointer;font-size:12px;color:var(--ink-soft);">Vedi listone</summary>
+      <table style="margin-top:8px;"><tr><th>Nome</th><th>Base d'asta</th><th>Ruolo</th><th>Da rosa di</th></tr>
+      ${list.players.map(p=>`<tr><td>${esc(p.name)}</td><td class="mono">${fmtCredits(p.minBid)}</td><td>${esc(ROLE_LABEL[p.role]||p.role||'')}</td><td>${esc(p.owner||'')}</td></tr>`).join('')}
+      </table></details>`:''}
+    ${list.status==='computed' && list.assigned ? `<table style="margin-top:14px;">
+      <tr><th>Utente</th><th>Giocatore</th><th>Prezzo</th></tr>
+      ${Object.entries(list.assigned).flatMap(([u,arr])=>arr.map(a=>`<tr><td>${esc(u)}</td><td>${esc(a.player)}</td><td class="mono">${fmtCredits(a.price)}</td></tr>`)).join('')}
+    </table>`:''}
+    ${list.status==='computed' ? `<p class="hint" style="margin-top:10px;">Assegnazione calcolata: i giocatori del listone rimasti senza offerte sono svincolati.</p>` : ''}
+  </div>`;
+}
+
+function renderAdminRiparazione(){
+  const repair1 = state.lists.REPAIR1;
+  const pending = (state.repairListings||[]).filter(l=>!l.resolved && !repair1.players.some(p=>p.name===l.player));
   const resolved = (state.repairListings||[]).filter(l=>l.resolved).sort((a,b)=> new Date(b.addedAt)-new Date(a.addedAt)).slice(0,30);
   const win = (state.config && state.config.repairWindow) || {openAt:null, closeAt:null};
   const winSt = timeWindowStatus(win);
@@ -1021,7 +1071,7 @@ function renderAdminRiparazione(){
   return `
   <div class="panel">
     <h2>Finestra per gli svincoli <span class="badge ${winBadgeClass}" style="margin-left:8px;">${winBadgeText}</span></h2>
-    <p class="desc">Il pulsante "Svincola" (in Panchina) è visibile agli utenti solo durante questa finestra: fuori da questi orari nessuno può mettere giocatori all'asta di riparazione. Non riguarda invece la finestra di offerta del listone qui sotto, che resta impostata separatamente.</p>
+    <p class="desc">Il pulsante "Svincola" (in Panchina) è visibile agli utenti solo durante questa finestra: fuori da questi orari nessuno può mettere giocatori all'asta di riparazione. Riguarda solo le nomine per la riparazione 1 (la riparazione 2 riparte dagli invenduti della 1, senza nuovi svincoli). Non riguarda invece la finestra di offerta dei listoni qui sotto, che resta impostata separatamente per ciascun round.</p>
     <div class="row-flex">
       <div class="field">
         <label>Apertura</label>
@@ -1044,7 +1094,7 @@ function renderAdminRiparazione(){
   </div>
   <div class="panel">
     <h2>Carica svincolati esterni (nuovi arrivi Serie A)</h2>
-    <p class="desc">Carica un file .txt con giocatori da aggiungere al listone dell'asta di riparazione anche se non arrivano dalla panchina di nessun utente (es. nuovi tesseramenti in Serie A prima dell'asta). Formato <span class="mono">NomeGiocatore;OffertaMinima;Ruolo</span> (Ruolo: P, D, C o A), una riga per giocatore. I giocatori già presenti nel listone (per nome) vengono ignorati.</p>
+    <p class="desc">Carica un file .txt con giocatori da aggiungere al listone della riparazione 1 anche se non arrivano dalla panchina di nessun utente (es. nuovi tesseramenti in Serie A prima dell'asta). Formato <span class="mono">NomeGiocatore;OffertaMinima;Ruolo</span> (Ruolo: P, D, C o A), una riga per giocatore. I giocatori già presenti nel listone (per nome) vengono ignorati.</p>
     <input type="file" accept=".txt" id="repair-external-file">
   </div>
   <div class="panel">
@@ -1056,46 +1106,23 @@ function renderAdminRiparazione(){
   </div>
   <div class="panel">
     <h2>Nomine in attesa</h2>
-    <p class="desc">Giocatori che gli utenti hanno messo all'asta di riparazione (crediti già restituiti al proprietario) ma non ancora inseriti nel listone del round corrente.</p>
+    <p class="desc">Giocatori che gli utenti hanno messo all'asta di riparazione (crediti già restituiti al proprietario) ma non ancora inseriti nel listone della riparazione 1.</p>
     ${pending.length===0 ? '<p class="empty-note">Nessuna nomina in attesa.</p>' : `
     <table><tr><th>Utente</th><th>Giocatore</th><th>Base d'asta</th><th>Ruolo</th></tr>
       ${pending.map(l=>`<tr><td>${esc(l.username)}</td><td>${esc(l.player)}</td><td class="mono">${fmtCredits(l.minBid)}</td><td>${esc(ROLE_LABEL[l.role]||l.role||'')}</td></tr>`).join('')}
     </table>`}
     <button class="btn-primary" style="width:auto;margin-top:12px;" id="btn-add-repair-nominations" ${pending.length===0?'disabled':''}>Aggiungi le nomine in attesa al listone (${pending.length})</button>
   </div>
-  <div class="list-card">
-    <h3>${esc(list.label)} <span><span class="badge ${badgeClass}">${badgeText}</span></span></h3>
-    <div class="players-count" style="margin-bottom:10px;">${list.players.length} giocatori nel listone</div>
-    <div class="row-flex">
-      <div class="field">
-        <label>Apertura</label>
-        <input type="datetime-local" data-open="REPAIR" value="${list.openAt?toLocalInput(list.openAt):''}">
-      </div>
-      <div class="field">
-        <label>Chiusura</label>
-        <input type="datetime-local" data-close="REPAIR" value="${list.closeAt?toLocalInput(list.closeAt):''}">
-      </div>
-      <button class="btn-secondary" data-save-times="REPAIR">Salva orari</button>
-    </div>
-    <div class="row-flex" style="margin-top:8px;">
-      <div class="field" style="max-width:140px;">
-        <label>Apri per (min)</label>
-        <input type="number" min="1" value="60" data-quick-min="REPAIR">
-      </div>
-      <button class="btn-secondary" data-quick-open="REPAIR">Apri ora</button>
-      <button class="btn-small" data-close-now="REPAIR">Chiudi ora</button>
-      <button class="btn-primary" style="width:auto;" id="btn-compute-repair" ${list.players.length===0?'disabled':''}>${list.status==='computed'?'Ricalcola assegnazione':'Calcola assegnazione'}</button>
-    </div>
-    ${list.players.length>0 ? `<details style="margin-top:10px;"><summary style="cursor:pointer;font-size:12px;color:var(--ink-soft);">Vedi listone</summary>
-      <table style="margin-top:8px;"><tr><th>Nome</th><th>Base d'asta</th><th>Ruolo</th><th>Da rosa di</th></tr>
-      ${list.players.map(p=>`<tr><td>${esc(p.name)}</td><td class="mono">${fmtCredits(p.minBid)}</td><td>${esc(ROLE_LABEL[p.role]||p.role||'')}</td><td>${esc(p.owner||'')}</td></tr>`).join('')}
-      </table></details>`:''}
-    ${list.status==='computed' && list.assigned ? `<table style="margin-top:14px;">
-      <tr><th>Utente</th><th>Giocatore</th><th>Prezzo</th></tr>
-      ${Object.entries(list.assigned).flatMap(([u,arr])=>arr.map(a=>`<tr><td>${esc(u)}</td><td>${esc(a.player)}</td><td class="mono">${fmtCredits(a.price)}</td></tr>`)).join('')}
-    </table>`:''}
-    ${list.status==='computed' ? `<p class="hint" style="margin-top:10px;">Assegnazione calcolata: i giocatori del listone rimasti senza offerte sono svincolati. Vai su "Completamento rose" e lancia di nuovo il completamento per assegnarli a chi ha ancora bisogno di quel ruolo.</p>` : ''}
+  <h2 style="margin:0 0 4px;">Riparazione 1</h2>
+  <p class="desc" style="margin:0 0 14px;">Il listone raccoglie gli svincoli degli utenti (più eventuali arrivi esterni). I giocatori rimasti senza offerte a fine round diventano il punto di partenza della riparazione 2.</p>
+  ${renderRepairListCard('REPAIR1')}
+  <div class="panel" style="text-align:center;">
+    <button class="btn-secondary" id="btn-gen-repair2" ${repair1.status!=='computed'?'disabled':''}>Genera lista riparazione 2 dagli invenduti della riparazione 1</button>
+    ${repair1.status!=='computed'?`<p class="hint" style="margin-top:8px;">Calcola prima l'assegnazione della riparazione 1.</p>`:''}
   </div>
+  <h2 style="margin:0 0 4px;">Riparazione 2</h2>
+  <p class="desc" style="margin:0 0 14px;">Nessun nuovo svincolo qui: il listone è generato automaticamente dagli invenduti della riparazione 1 e gli utenti possono solo fare offerte su quei giocatori.</p>
+  ${renderRepairListCard('REPAIR2')}
   ${resolved.length>0 ? `
   <div class="panel">
     <h2>Storico nomine risolte</h2>
@@ -1545,7 +1572,7 @@ function attachAdminHandlers(){
     if(!file) return;
     const text = await file.text();
     const lines = text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
-    const list = state.lists.REPAIR;
+    const list = state.lists.REPAIR1;
     const existingNames = new Set(list.players.map(p=>p.name));
     let added = 0, skipped = 0;
     lines.forEach(line=>{
@@ -1605,10 +1632,20 @@ function attachAdminHandlers(){
     render();
   });
 
-  const computeRepairBtn = document.getElementById('btn-compute-repair');
-  if(computeRepairBtn) computeRepairBtn.addEventListener('click', async ()=>{
-    await computeRepairAssignment();
-    showToast('Assegnazione asta di riparazione calcolata.');
+  document.querySelectorAll('[data-compute-repair]').forEach(b=>{
+    b.addEventListener('click', async ()=>{
+      const id = b.dataset.computeRepair;
+      await computeRepairAssignment(id);
+      showToast('Assegnazione asta di riparazione calcolata.');
+      render();
+    });
+  });
+
+  const genRepair2Btn = document.getElementById('btn-gen-repair2');
+  if(genRepair2Btn) genRepair2Btn.addEventListener('click', async ()=>{
+    generateRepair2FromRepair1();
+    await persistLists();
+    showToast('Lista riparazione 2 generata dagli invenduti della riparazione 1.');
     render();
   });
 
@@ -1897,6 +1934,18 @@ function generateRound2FromRound1(){
   state.lists.OPEN2.assignedPlayers = null;
 }
 
+// Copia nella riparazione 2 solo i giocatori della riparazione 1 rimasti
+// invenduti: nessun nuovo svincolo viene accettato in questo round, gli
+// utenti possono solo fare offerte sul pool che resta dalla riparazione 1.
+function generateRepair2FromRepair1(){
+  const repair1 = state.lists.REPAIR1;
+  const won = new Set(Object.keys(repair1.assignedPlayers || {}));
+  state.lists.REPAIR2.players = repair1.players.filter(p=>!won.has(p.name));
+  state.lists.REPAIR2.status = 'setup';
+  state.lists.REPAIR2.assigned = null;
+  state.lists.REPAIR2.assignedPlayers = null;
+}
+
 // ================= COMPLETAMENTO ROSE =================
 // Copre i ruoli mancanti (8 D, 8 C, 4 A a testa) usando i giocatori rimasti
 // scoperti dopo i due round di lista aperta, in ordine di quotazione
@@ -1940,21 +1989,26 @@ async function computeSquadCompletion(){
   const counts = countRolesAssigned();
   const won1 = new Set(Object.keys(state.lists.OPEN1.assignedPlayers || {}));
   const won2 = new Set(Object.keys(state.lists.OPEN2.assignedPlayers || {}));
-  // Giocatori venduti nell'asta di riparazione: se questa è già stata
-  // calcolata, i suoi svincolati rimasti (invenduti) rientrano nel pool qui
-  // sotto e vengono ridistribuiti come un secondo completamento rose.
-  const wonRepair = new Set(Object.keys(state.lists.REPAIR.assignedPlayers || {}));
+  // Giocatori venduti nelle aste di riparazione: se queste sono già state
+  // calcolate, i loro svincolati rimasti (invenduti anche dopo la
+  // riparazione 2) rientrano nel pool qui sotto e vengono ridistribuiti
+  // come un secondo completamento rose.
+  const wonRepair1 = new Set(Object.keys(state.lists.REPAIR1.assignedPlayers || {}));
+  const wonRepair2 = new Set(Object.keys(state.lists.REPAIR2.assignedPlayers || {}));
   const wonManual = new Set();
   if(state.manualAssignments){
     Object.values(state.manualAssignments).forEach(arr=>(arr||[]).forEach(a=>wonManual.add(a.player)));
   }
-  const repairPlayers = state.lists.REPAIR.status==='computed' ? state.lists.REPAIR.players : [];
+  const repairPlayers = [
+    ...(state.lists.REPAIR1.status==='computed' ? state.lists.REPAIR1.players : []),
+    ...(state.lists.REPAIR2.status==='computed' ? state.lists.REPAIR2.players : []),
+  ];
   const catalog = [...state.lists.OPEN1.players, ...state.lists.OPEN2.players, ...repairPlayers];
   const seen = new Set();
   let pool = catalog.filter(p=>{
     if(seen.has(p.name)) return false;
     seen.add(p.name);
-    return !won1.has(p.name) && !won2.has(p.name) && !wonRepair.has(p.name) && !wonManual.has(p.name) && ROLE_QUOTA[p.role];
+    return !won1.has(p.name) && !won2.has(p.name) && !wonRepair1.has(p.name) && !wonRepair2.has(p.name) && !wonManual.has(p.name) && ROLE_QUOTA[p.role];
   });
   pool.sort((a,b)=> b.minBid - a.minBid); // dal più caro al più economico
 
@@ -2031,7 +2085,7 @@ function getUserRoster(username){
 // non ancora risolte e non ancora presenti nel listone corrente. Va lanciata
 // dall'admin prima di aprire un round di offerte.
 function addPendingNominationsToRepairList(){
-  const list = state.lists.REPAIR;
+  const list = state.lists.REPAIR1;
   const inListNames = new Set(list.players.map(p=>p.name));
   const toAdd = (state.repairListings||[]).filter(l=>!l.resolved && !inListNames.has(l.player));
   toAdd.forEach(l=>{
@@ -2047,12 +2101,22 @@ function addPendingNominationsToRepairList(){
 // momento della nomina (vedi attachRepairNominationHandlers), quindi qui non
 // si rimborsa più nessuno: il giocatore non torna mai al vecchio proprietario.
 // I giocatori del round senza offerte restano "svincolati": non tornano in
-// nessuna rosa, ma restano disponibili per il completamento rose che
-// l'admin lancia di nuovo dopo l'asta di riparazione (vedi computeSquadCompletion).
-// Ricalcolabile: se richiamata di nuovo, prima annulla tutto quanto fatto
-// dal calcolo precedente (crediti dei vincitori e spostamenti in state.finalRosters).
-async function computeRepairAssignment(){
-  const list = state.lists.REPAIR;
+// nessuna rosa. Quelli della riparazione 1 diventano il pool di partenza
+// della riparazione 2 (vedi generateRepair2FromRepair1); quelli ancora
+// invenduti dopo la riparazione 2 restano disponibili per il completamento
+// rose che l'admin lancia di nuovo alla fine (vedi computeSquadCompletion).
+// Funziona sia per REPAIR1 che per REPAIR2 (parametro listId). Ricalcolabile:
+// se richiamata di nuovo, prima annulla tutto quanto fatto dal calcolo
+// precedente (crediti dei vincitori e spostamenti in state.finalRosters).
+async function computeRepairAssignment(listId){
+  const list = state.lists[listId];
+  // La riparazione 1 gestisce le nomine originali (svincoli): un ricalcolo
+  // deve poter tornare "in attesa" (resolved:false) per far ripartire tutto
+  // da zero. La riparazione 2 lavora invece solo sugli invenduti della 1
+  // (nessuna nomina propria): un suo ricalcolo deve tornare allo stato
+  // "invenduto/svincolato" della riparazione 1, mai a "in attesa", e non
+  // deve mai restituire il giocatore al vecchio proprietario.
+  const isFirstRound = listId === 'REPAIR1';
 
   if(list.status==='computed' && list.assigned){
     // storna il prezzo pagato dai vincitori del calcolo precedente
@@ -2061,9 +2125,7 @@ async function computeRepairAssignment(){
       if(usr) arr.forEach(a=>{ usr.credits += a.price; });
     });
     // toglie il giocatore dalla rosa del vincitore del calcolo precedente
-    // (torna "svincolato", non al vecchio proprietario) e ripristina lo
-    // stato "non risolto" delle nomine di questo round, così il ricalcolo
-    // riparte da zero
+    // (torna "svincolato", non al vecchio proprietario)
     list.players.forEach(p=>{
       if(!p.owner) return;
       const wasWon = list.assignedPlayers && list.assignedPlayers[p.name];
@@ -2072,11 +2134,14 @@ async function computeRepairAssignment(){
         if(state.finalRosters[prevWinner]) state.finalRosters[prevWinner] = state.finalRosters[prevWinner].filter(x=>x.player!==p.name);
       }
       const listing = state.repairListings.find(l=>l.username===p.owner && l.player===p.name);
-      if(listing){ listing.resolved=false; listing.wonBy=null; listing.finalPrice=null; listing.returnedUnsold=false; }
+      if(listing){
+        if(isFirstRound){ listing.resolved=false; listing.wonBy=null; listing.finalPrice=null; listing.returnedUnsold=false; }
+        else { listing.resolved=true; listing.wonBy=null; listing.finalPrice=null; listing.returnedUnsold=true; }
+      }
     });
   }
 
-  const winners = buildOpenAssignmentPreview('REPAIR');
+  const winners = buildOpenAssignmentPreview(listId);
   const perUser = {};
   Object.entries(winners).forEach(([player,a])=>{
     const plObj = list.players.find(p=>p.name===player);
@@ -2085,12 +2150,15 @@ async function computeRepairAssignment(){
     if(usr) usr.credits -= a.price;
     if(plObj && plObj.owner){
       if(state.finalRosters){
-        if(state.finalRosters[plObj.owner]) state.finalRosters[plObj.owner] = state.finalRosters[plObj.owner].filter(x=>x.player!==player);
+        // Nella riparazione 1 il giocatore va tolto dalla rosa del
+        // vecchio proprietario; nella riparazione 2 ne era già uscito
+        // (era rimasto invenduto), quindi va solo aggiunto al vincitore.
+        if(isFirstRound && state.finalRosters[plObj.owner]) state.finalRosters[plObj.owner] = state.finalRosters[plObj.owner].filter(x=>x.player!==player);
         if(!state.finalRosters[a.username]) state.finalRosters[a.username] = [];
         state.finalRosters[a.username].push({player, price:a.price});
       }
       const listing = state.repairListings.find(l=>l.username===plObj.owner && l.player===player);
-      if(listing){ listing.resolved=true; listing.wonBy=a.username; listing.finalPrice=a.price; }
+      if(listing){ listing.resolved=true; listing.wonBy=a.username; listing.finalPrice=a.price; listing.returnedUnsold=false; }
     }
   });
   list.players.forEach(p=>{
@@ -2098,7 +2166,10 @@ async function computeRepairAssignment(){
       // Invenduto: resta svincolato, disponibile per il completamento rose
       // successivo. Non torna al vecchio proprietario (già rimborsato).
       const listing = state.repairListings.find(l=>l.username===p.owner && l.player===p.name);
-      if(listing){ listing.resolved=true; listing.returnedUnsold=true; }
+      if(listing){
+        listing.resolved=true; listing.returnedUnsold=true;
+        if(!isFirstRound){ listing.wonBy=null; listing.finalPrice=null; }
+      }
     }
   });
 
@@ -2177,7 +2248,7 @@ function benchActiveCount(username){
 function renderRepairNominationPanel(){
   const me = state.currentUser;
   const roster = getUserRoster(me);
-  const inRoundNames = new Set(state.lists.REPAIR.players.map(p=>p.name));
+  const inRoundNames = new Set(state.lists.REPAIR1.players.map(p=>p.name));
   const myListings = (state.repairListings||[]).filter(l=>l.username===me);
   const pendingMine = myListings.filter(l=>!l.resolved && !inRoundNames.has(l.player));
   const inRoundMine = myListings.filter(l=>!l.resolved && inRoundNames.has(l.player));
@@ -2193,7 +2264,7 @@ function renderRepairNominationPanel(){
   // ancora essere ritirato finché il round di offerte su quel listone non è
   // partito: una volta che gli altri utenti possono fare offerte, ritirarlo
   // creerebbe incoerenze, quindi da lì in poi lo svincolo è definitivo.
-  const repairListSt = listStatus(state.lists.REPAIR);
+  const repairListSt = listStatus(state.lists.REPAIR1);
   const canWithdrawInRound = repairListSt==='setup';
   let windowStatusHtml;
   if(winSt==='open'){
@@ -2287,8 +2358,8 @@ function renderUser(){
     <div class="pitch-wrap standalone">
       <div class="formation">
         ${rows.map(r=>`<div class="form-row">${LISTS_META.filter(m=>m.row===r).map(m=>renderTile(m)).join('')}</div>`).join('')}
-        <div class="form-row">${OPEN_LISTS_META.filter(m=>m.id!=='REPAIR').map(m=>renderTile(m)).join('')}</div>
-        <div class="form-row">${OPEN_LISTS_META.filter(m=>m.id==='REPAIR').map(m=>renderTile(m)).join('')}</div>
+        <div class="form-row">${OPEN_LISTS_META.filter(m=>m.id==='OPEN1'||m.id==='OPEN2').map(m=>renderTile(m)).join('')}</div>
+        <div class="form-row">${OPEN_LISTS_META.filter(m=>m.id==='REPAIR1'||m.id==='REPAIR2').map(m=>renderTile(m)).join('')}</div>
       </div>
     </div>` : renderRepairNominationPanel()}
   </div>
@@ -2512,8 +2583,8 @@ function attachRepairNominationHandlers(){
       // Se il giocatore è già nel listone del round di riparazione ma il
       // round non è ancora aperto alle offerte, blocca comunque il ritiro
       // per sicurezza (in caso lo stato sia cambiato nel frattempo).
-      const inRoundNames = new Set(state.lists.REPAIR.players.map(p=>p.name));
-      if(inRoundNames.has(listing.player) && listStatus(state.lists.REPAIR)!=='setup'){
+      const inRoundNames = new Set(state.lists.REPAIR1.players.map(p=>p.name));
+      if(inRoundNames.has(listing.player) && listStatus(state.lists.REPAIR1)!=='setup'){
         showToast('Non è più possibile ritirare questo svincolo: il round è già aperto o concluso.');
         return;
       }
@@ -2522,7 +2593,7 @@ function attachRepairNominationHandlers(){
       if(owner) owner.credits -= listing.price;
       // Se era già stato inserito nel listone di riparazione, toglilo anche
       // da lì.
-      state.lists.REPAIR.players = state.lists.REPAIR.players.filter(p=>!(p.name===listing.player && p.owner===listing.username));
+      state.lists.REPAIR1.players = state.lists.REPAIR1.players.filter(p=>!(p.name===listing.player && p.owner===listing.username));
       state.repairListings = state.repairListings.filter(l=>l.id!==id);
       await Promise.all([persistRepairListings(), persistUsers(), persistLists()]);
       showToast('Svincolo ritirato, giocatore tornato in rosa.');
